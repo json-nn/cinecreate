@@ -1,0 +1,18 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "org.minechestplate.cinecreate.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MenuActionsMixin",
+    "SessionsMixin",
+    "StationEventsMixin"
+  ],
+  "client": [
+    "SceneRefuseMixin"
+  ],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

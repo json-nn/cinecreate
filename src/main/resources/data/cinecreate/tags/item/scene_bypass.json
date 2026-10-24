@@ -1,0 +1,16 @@
+{
+  "values": [
+    "create:wrench",
+    "create:goggles",
+    "create:mechanical_arm",
+    "create:belt_connector",
+    "create:super_glue",
+    "create:clipboard",
+    "create:filter",
+    "create:attribute_filter",
+    "create:package_filter",
+    "create:schedule",
+    "create:linked_controller",
+    { "id": "#c:tools/wrench", "required": false }
+  ]
+}
