@@ -25,9 +25,8 @@ public class CrankMenu extends BridgeMenu {
     /** Buttons: crank on, crank back (Create's sneak-click). */
     public static final int TURN = 0, TURN_BACK = 1;
     /**
-     * As holding use repeats itself: the scene sends a turn every this many ticks. The server takes each one, as it
-     * takes each repeated click (a slow server handles several in one tick); more turns gain nothing, a turn only keeps
-     * the crank going, and each costs its hunger.
+     * As holding use repeats itself, the scene sends a turn every this many ticks (a slow server may take several in one
+     * tick). More would gain nothing: a turn only keeps the crank going, and each costs its hunger.
      */
     public static final int TURN_EVERY = 4;
     /** Create's crank turns at this speed while held. */

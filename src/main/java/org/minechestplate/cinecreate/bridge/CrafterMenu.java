@@ -24,15 +24,17 @@ import org.minechestplate.cinecreate.station.CrafterGroup;
 import org.minechestplate.cinecreate.station.Crafters;
 
 /**
- * A group of Mechanical Crafters ({@link CrafterGroup}): one slot per crafter, in the group's reading order, holding
- * what that crafter's window holds (one item). Putting in goes through the crafter's own inventory, as Create's click
- * and funnels put items in, so Create decides what fits (nothing while the crafters are at work, nothing in a covered
- * window) and starts the recipe once every window is filled. The Slot Cover is an action, not an item: buttons
- * {@link #COVER} and {@link #UNCOVER} plus the cell, done through Create's own click on that crafter's front.
+ * A group of Mechanical Crafters ({@link CrafterGroup}): one slot per crafter's window (one item), in the group's
+ * reading order. Putting in goes through the crafter's own inventory, as funnels do, so Create decides what fits and
+ * starts the recipe once every window is filled. The Slot Cover is an action, not an item: buttons {@link #COVER} and
+ * {@link #UNCOVER} plus the cell, done through Create's own click on that crafter's front.
  */
 public class CrafterMenu extends BridgeMenu {
-    /** Buttons: put the carried Slot Cover on cell {@code COVER + i}, take the cover off cell {@code UNCOVER + i}. */
-    public static final int COVER = 0, UNCOVER = 32;
+    /**
+     * Buttons: put the carried Slot Cover on cell {@code COVER + i}, take the cover off cell {@code UNCOVER + i} (past
+     * the largest group's cells: a 10×10 has 100).
+     */
+    public static final int COVER = 0, UNCOVER = 128;
 
     private final CrafterGroup group;
 
@@ -44,7 +46,7 @@ public class CrafterMenu extends BridgeMenu {
         for (int i = 0; i < group.cells().size(); i++) {
             BlockPos cell = group.cells().get(i);
             int x = 8 + group.column(cell) * 18, y = 18 + group.row(cell) * 18;
-            addSlot(server ? new WindowSlot(level, cell, x, y) : new Slot(copy, i, x, y) {
+            addSlot(server ? new WindowSlot(inventory.player, cell, x, y) : new Slot(copy, i, x, y) {
                 @Override
                 public boolean mayPlace(ItemStack stack) {
                     // клиент гадает по своей копии крафтера; решает сервер
@@ -89,12 +91,10 @@ public class CrafterMenu extends BridgeMenu {
         }
     }
 
-    /** The group as the server found it (the client's copy has the same cells). */
     public CrafterGroup group() {
         return group;
     }
 
-    /** The slot of the crafter at this position, or -1 when it is not in the group. */
     public int slotOf(BlockPos cell) {
         return group.cells().indexOf(cell);
     }
@@ -105,9 +105,9 @@ public class CrafterMenu extends BridgeMenu {
     }
 
     /**
-     * Server: a cover button. Done as Create's own click on that crafter's front does it: with the carried Slot Cover
-     * it covers the empty window (and uses the cover up, but not in creative), with an empty hand it takes the cover off
-     * into the inventory. Only on an idle crafter: Create's click on a crafter at work would throw the whole grid out.
+     * Server: a cover button, as Create's own click on that crafter's front: the carried Slot Cover covers the empty
+     * window, an empty hand takes the cover off into the inventory. Only on an idle crafter: Create's click on a crafter
+     * at work would throw the whole grid out.
      */
     @Override
     public boolean clickMenuButton(Player player, int id) {
@@ -117,6 +117,9 @@ public class CrafterMenu extends BridgeMenu {
             return false;
         }
         BlockPos at = group.cells().get(cell);
+        if (!reaches(player, at)) {
+            return false;
+        }
         Level level = player.level();
         MechanicalCrafterBlockEntity crafter = crafter(level, at);
         if (crafter == null || !Crafters.idle(crafter)) {
@@ -142,15 +145,29 @@ public class CrafterMenu extends BridgeMenu {
         return !Crafters.covered(crafter);
     }
 
-    /** Server: a crafter's window, read and written on the crafter itself. */
+    /**
+     * Server: the window is within the player's own reach, as the game checks a click on a block (the menu's reach is
+     * for the crafter the scene began at; a 10×10 is wider than that).
+     */
+    private static boolean reaches(Player player, BlockPos cell) {
+        return player.canInteractWithBlock(cell, 1.0);
+    }
+
     private static final class WindowSlot extends Slot {
+        private final Player player;
         private final Level level;
         private final BlockPos cell;
 
-        WindowSlot(Level level, BlockPos cell, int x, int y) {
+        WindowSlot(Player player, BlockPos cell, int x, int y) {
             super(new SimpleContainer(1), 0, x, y);
-            this.level = level;
+            this.player = player;
+            this.level = player.level();
             this.cell = cell;
+        }
+
+        @Override
+        public boolean mayPickup(Player who) {
+            return reaches(who, cell);
         }
 
         @Override
@@ -167,7 +184,7 @@ public class CrafterMenu extends BridgeMenu {
         @Override
         public boolean mayPlace(ItemStack stack) {
             MechanicalCrafterBlockEntity crafter = crafter(level, cell);
-            return crafter != null && Crafters.takes(crafter, stack);
+            return crafter != null && Crafters.takes(crafter, stack) && reaches(player, cell);
         }
 
         @Override
@@ -180,7 +197,6 @@ public class CrafterMenu extends BridgeMenu {
                 // всегда через инвентарь: перенос Shift-кликом уменьшает саму стопку крафтера, и без этого никто не узнает
                 crafter.getInventory().setStackInSlot(0, ItemStack.EMPTY);
             } else {
-                // как воронка или клик Create: через инвентарь крафтера (его звук, и рецепт начнётся, когда всё готово)
                 crafter.getInventory().insertItem(0, stack, false);
             }
         }

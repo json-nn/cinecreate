@@ -43,7 +43,6 @@ public class BurnerMenu extends BridgeMenu {
                 Component.translatable("cinecreate.menu.blaze_burner"));
     }
 
-    /** Server: Create's click with the carried item, on the side the player works from. */
     @Override
     public boolean clickMenuButton(Player player, int id) {
         int side = id - FEED;

@@ -46,3 +46,5 @@ repo/
 tools/avatar/assets/
 tools/avatar/out/
 tools/avatar/__pycache__/
+/docs/
+/tools/

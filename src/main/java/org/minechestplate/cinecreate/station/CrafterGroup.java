@@ -21,19 +21,14 @@ import net.minecraft.world.phys.Vec3;
 /**
  * Mechanical Crafters worked as one scene: the wall the clicked one stands in (crafters next to each other in the plane
  * of their fronts, all facing the same way), up to {@link #MAX}×{@link #MAX}. A bigger wall is cut down to the crafters
- * Create's recipe chain links to the clicked one (those that pass items to each other); when even that is bigger, there
- * is no scene and the click stays Create's (DESIGN §10).
+ * Create's recipe chain links to the clicked one; when even that is bigger, there is no scene (DESIGN §10).
  *
- * <p>The cells are in reading order as seen from the front: rows from the top, each from the left. The bridge menu has
- * one slot per cell in that order.
- *
- * @param facing  the way the fronts face (the side the scene is worked from)
- * @param cells   every crafter of the group, in reading order
- * @param left    the leftmost column, counted along {@link #across()} in world coordinates
- * @param top     the top row's height
+ * <p>The cells are in reading order as seen from the front (rows from the top, each from the left); the bridge menu has
+ * one slot per cell in that order. {@code left} is the leftmost column counted along {@link #across()}, {@code top} the
+ * top row's height.
  */
 public record CrafterGroup(Direction facing, List<BlockPos> cells, int left, int top, int width, int height) {
-    /** The largest group the camera frames: Create's crafters build up to 10×10 (DESIGN §10; 5×5 until the user's note after M7). */
+    /** The largest group the camera frames: Create's crafters build up to 10×10 (DESIGN §10). */
     public static final int MAX = 10;
     /** How many crafters of a wall are looked at, at most: a wall this big is too big anyway. */
     private static final int SEARCH = 2 * MAX * MAX;
@@ -53,7 +48,7 @@ public record CrafterGroup(Direction facing, List<BlockPos> cells, int left, int
         if (group != null && group.fits()) {
             return group;
         }
-        // стена больше 5×5: тогда только цепочка рецепта, в которой стоит этот крафтер
+        // стена больше 10×10: тогда только цепочка рецепта, в которой стоит этот крафтер
         if (level.getBlockEntity(pos) instanceof MechanicalCrafterBlockEntity crafter) {
             List<MechanicalCrafterBlockEntity> chain = RecipeGridHandler.getAllCraftersOfChain(crafter);
             if (chain != null) {
@@ -154,7 +149,6 @@ public record CrafterGroup(Direction facing, List<BlockPos> cells, int left, int
         return -1;
     }
 
-    /** The middle of a crafter's front. */
     public Vec3 face(BlockPos cell) {
         return Vec3.atCenterOf(cell).add(Vec3.atLowerCornerOf(facing.getNormal()).scale(0.5));
     }
@@ -171,7 +165,6 @@ public record CrafterGroup(Direction facing, List<BlockPos> cells, int left, int
         return face(first).add(across.scale(column - column(first))).add(0, row(first) - row, 0);
     }
 
-    /** The middle of the whole group's front. */
     public Vec3 centre() {
         return point((width - 1) / 2.0, (height - 1) / 2.0);
     }

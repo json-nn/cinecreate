@@ -9,11 +9,9 @@ license="${mod_license}"
 modId="${mod_id}" #mandatory
 version="${mod_version}" #mandatory
 displayName="${mod_name}" #mandatory
-authors="Minechestplate"
+logoFile="cinecreate_logo.png"
+authors="JS_ON"
 credits="Scene engine and add-on API: Cinematic Interactions by Southware. Machines: Create by simibubi and the Creators of Create."
-description='''
-Cinematic Interactions scenes for Create machines: load a depot under the press by hand, fill the mechanical crafters, turn the valve handle.
-'''
 
 [[mixins]]
 config="${mod_id}.mixins.json"
@@ -39,10 +37,10 @@ config="${mod_id}.mixins.json"
     ordering="AFTER"
     side="BOTH"
 
-# The add-on API is a preview that may change between releases: widen the range only after testing a new one
+# Newer versions are accepted: if one lacks something we use, CiHooks / CiApi turn the scenes off and Create keeps its clicks
 [[dependencies.${mod_id}]]
     modId="cinematic"
     type="required"
-    versionRange="[${cinematic_version},0.19)"
+    versionRange="[${cinematic_version},)"
     ordering="AFTER"
     side="BOTH"

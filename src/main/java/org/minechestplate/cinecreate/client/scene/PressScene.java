@@ -24,12 +24,9 @@ import org.minechestplate.cinecreate.client.FrameCounter;
 import org.minechestplate.cinecreate.station.Composites;
 
 /**
- * Pressing: under a Mechanical Press the depot is the anvil. The player lays the ingot on the plate and keeps the hands
- * on the rim; the camera stands back to take in both the plate and the head. Create drives the head and the scene only
- * listens. While the head comes down the hands flinch back; the frame it reaches the plate the camera jolts, hot brass
- * sparks ring out from under it and the screen flashes warm; once the stack has turned into the result, warm motes
- * rise off it with a chime. Without rotation the head never moves: the hint says the press needs it, and the fingers
- * drum on the rim. (DESIGN §7.2)
+ * Pressing (DESIGN §7.2): under a Mechanical Press the depot is the anvil. Create drives the head and the scene only
+ * listens: the hands flinch as it comes down, the impact kicks the camera with sparks and a warm flash, and the result
+ * rises in motes with a chime. Without rotation the fingers drum on the rim.
  */
 public class PressScene extends DepotScene {
     /** The impact at full strength: camera kick and flash, and how fast each dies away. */
@@ -44,36 +41,35 @@ public class PressScene extends DepotScene {
     static final double FLINCH = 0.12, FLINCH_TIME = 0.22;
     /** The head's offset (0 up, 1 on the plate, as Create draws it) past which it counts as coming down. */
     static final float HEAD_MOVING = 0.05f;
-    /** The hands on the rim, wider than at the bare depot. */
     static final double RIM = 0.34;
     /** How long after an impact the server may take to show the result. */
     static final double RESULT_WAIT = 1.5;
-    /** Below this the press counts as stopped. */
     static final double MIN_RPM = 1;
 
-    /** Development ({@code SmokeTest}): every impact so far, and how many results showed. */
+    /** Development (SmokeTest): the latest impacts, and how many results showed. */
     public final List<Impact> impacts = new ArrayList<>();
+    /** Only the latest impacts are kept: a press watched for an hour adds thousands. */
+    static final int IMPACTS_KEPT = 64;
     public int results;
 
-    /**
-     * @param frame  the {@link FrameCounter} frame it landed on
-     * @param at     {@link Scene#clock()} then
-     * @param kicked whether it kicked the camera (at most one kick per {@link #KICK_GAP})
-     */
+    /** An impact: the frame it landed on, the scene clock then, and whether it kicked the camera. */
     public record Impact(long frame, double at, boolean kicked) {}
 
-    /** What lies on the depot, to see when pressing has changed it. */
     private record Contents(Item held, int count, int outputs) {}
 
-    /** This cycle's impact has landed; {@link #lastTicks}: Create's cycle counter last frame (-1: not running). */
+    /** struck: this cycle's impact has landed; lastTicks: Create's cycle counter last frame (-1: not running). */
     private boolean primed, struck;
     private int lastTicks = -1;
     private double kickAt = -10, strength = 1;
     /** 0..1, straight; eased when it moves the hands. */
     private double flinch;
-    /** The contents as the head started down, until the result shows (or {@link #RESULT_WAIT} after the impact). */
+    /**
+     * Changes the press made that no impact has shown yet: Create's server runs a few ticks ahead, so at speed a change
+     * can come before the impact the client draws for it, or after. Each impact shows one, until RESULT_WAIT after it.
+     */
     @Nullable
-    private Contents before;
+    private Contents seen;
+    private int unshown;
     private double resultBy = -10;
 
     public PressScene(BlockPos pos, Direction side) {
@@ -102,7 +98,6 @@ public class PressScene extends DepotScene {
         return 30f;
     }
 
-    /** Hands on the rim; they flinch back from the head and, with the press stopped, drum. */
     @Override
     protected Vec3 restAt(boolean right) {
         Vec3 rim = top.add(side().scale(0.34)).add(right().scale(right ? RIM : -RIM)).add(0, HAND_Y, 0);
@@ -138,9 +133,8 @@ public class PressScene extends DepotScene {
     // ---- the machine ---------------------------------------------------------------------------------
 
     /**
-     * Once a frame, before anything is drawn: how far through its cycle Create draws the head this frame (its own
-     * interpolation, with this frame's partial tick). The impact lands on the very frame the head reaches the plate, or,
-     * when no frame showed it there (a hitch, or a fast press at a low frame rate), on the first frame after.
+     * Once a frame: where Create draws the head this frame (its own interpolation). The impact lands on the frame the
+     * head reaches the plate or, when no frame showed it there (a hitch, a fast press at a low frame rate), the next one.
      */
     @Override
     public void beforeFrame() {
@@ -166,16 +160,13 @@ public class PressScene extends DepotScene {
             impact(pressing);
         }
         boolean coming = !struck && head > HEAD_MOVING;
-        if (coming && before == null && resultBy < 0) {
-            before = contents();
-        }
         flinch = Anim.clamp01(flinch + (coming ? Scene.frameDt : -Scene.frameDt) / FLINCH_TIME);
+        noteChanges(running);
         watchResult();
     }
 
     private void impact(PressingBehaviour pressing) {
         double now = Scene.clock();
-        // быстрый пресс бьёт слабее: полная сила только у цикла от секунды
         double cycle = PressingBehaviour.CYCLE / (double) Math.max(1, pressing.getRunningTickSpeed()) / 20.0;
         strength = Math.min(1, cycle / FULL_CYCLE);
         boolean kick = now - kickAt >= KICK_GAP;
@@ -183,8 +174,8 @@ public class PressScene extends DepotScene {
             kickAt = now;
         }
         impacts.add(new Impact(FrameCounter.frame(), now, kick));
-        if (before == null) {
-            before = contents();
+        if (impacts.size() > IMPACTS_KEPT) {
+            impacts.remove(0);
         }
         resultBy = now + RESULT_WAIT;
         Vec3 at = top.add(0, 0.03, 0);
@@ -194,19 +185,31 @@ public class PressScene extends DepotScene {
         play(SoundEvents.ANVIL_PLACE, 0.2f * (float) strength, 1.7f);
     }
 
-    /** After an impact: the moment the stack shows as pressed, motes rise off it with a chime. */
+    /** A change of what lies on the depot while the press runs is the press's (the player's own moves are not). */
+    private void noteChanges(boolean running) {
+        Contents now = contents();
+        if (seen != null && !now.equals(seen) && running && !moving()) {
+            unshown++;
+        }
+        seen = now;
+        if (!running) {
+            unshown = 0;
+        }
+    }
+
+    /** After an impact: once the stack shows as pressed (it may already), motes rise off it with a chime. */
     private void watchResult() {
-        if (resultBy < 0 || before == null) {
+        if (resultBy < 0) {
             return;
         }
-        if (!contents().equals(before)) {
+        if (unshown > 0) {
+            unshown--;
             results++;
             Fx.motes(top.add(0, 0.05, 0), 0.1, 10, 1.0f, 0.75f, 0.4f, 0.2);
             play(SoundEvents.AMETHYST_BLOCK_CHIME, 0.35f, 1.3f);
         } else if (Scene.clock() <= resultBy) {
             return;
         }
-        before = null;
         resultBy = -10;
     }
 

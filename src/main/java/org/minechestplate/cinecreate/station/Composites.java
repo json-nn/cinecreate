@@ -28,25 +28,21 @@ public final class Composites {
     /** How far a fan's stream is looked for (Create's default reach is 20 blocks). */
     private static final int FAN_REACH = 24;
 
-    /** The press working this block, or null. */
     @Nullable
     public static MechanicalPressBlockEntity pressOver(BlockGetter level, BlockPos pos) {
         return level.getBlockEntity(pos.above(PRESS_HEIGHT)) instanceof MechanicalPressBlockEntity press ? press : null;
     }
 
-    /** The mixer working this block, or null. */
     @Nullable
     public static MechanicalMixerBlockEntity mixerOver(BlockGetter level, BlockPos pos) {
         return level.getBlockEntity(pos.above(PRESS_HEIGHT)) instanceof MechanicalMixerBlockEntity mixer ? mixer : null;
     }
 
-    /** The spout filling what lies on this block, or null. */
     @Nullable
     public static SpoutBlockEntity spoutOver(BlockGetter level, BlockPos pos) {
         return level.getBlockEntity(pos.above(PRESS_HEIGHT)) instanceof SpoutBlockEntity spout ? spout : null;
     }
 
-    /** A deployer facing down onto this block, or null. */
     @Nullable
     public static DeployerBlockEntity deployerOver(BlockGetter level, BlockPos pos) {
         BlockPos at = pos.above(PRESS_HEIGHT);
@@ -58,11 +54,10 @@ public final class Composites {
     }
 
     /**
-     * A fan's stream over this block and what it does there (washing, smoking, blasting, haunting), as Create's air
-     * current picks the handlers it works ({@code AirCurrent.findAffectedHandlers}): the current runs out from the fan
-     * along its facing (pushing or pulling), to its length rounded up (a depot stops the air at its face, and is still
-     * worked), and a horizontal current works the block under it too. The kind is the block's own catalyst, if it is one,
-     * or {@link AirCurrent#getTypeAt} one block short of it.
+     * A fan's stream over this block and what it does there, found as Create's {@code AirCurrent.findAffectedHandlers}
+     * finds it: to the current's length rounded up (a depot stops the air at its face and is still worked), and a
+     * horizontal current works the block under it too. The type is the block's own catalyst, or the current's one block
+     * short of it.
      */
     public record FanStream(BlockPos fan, Direction from, @Nullable FanProcessingType type) {}
 

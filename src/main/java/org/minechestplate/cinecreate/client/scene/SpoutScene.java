@@ -20,15 +20,14 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import org.minechestplate.cinecreate.station.Composites;
 
 /**
- * Spouting: a Spout over the depot (DESIGN §7.13). The player lays the bottle on the plate and watches: the nozzle
- * lowers and pours (Create draws that), droplets bead on what lies there in the liquid's colour, and the moment it is
- * filled it flares in that colour, like the brewing stand's potions.
+ * Spouting: a Spout over the depot (DESIGN §7.13). While Create pours, droplets bead on the work in the liquid's colour;
+ * the moment it is filled it flares in that colour, like the brewing stand's potions.
  */
 public class SpoutScene extends DepotScene {
     /** The flare: how long, from what size to what size, and the flash with it. */
     static final double FLARE_TIME = 0.6, FLARE_FROM = 0.09, FLARE_TO = 0.14, FLASH = 0.04, FLASH_DECAY = 10;
 
-    /** Development: fills seen. */
+    /** Development (SmokeTest): fills seen. */
     public int fills;
 
     /** The spout's countdown last tick (Create fills at 5); the liquid's colour; the flare. */
@@ -61,13 +60,11 @@ public class SpoutScene extends DepotScene {
         return mc.level == null ? null : Composites.spoutOver(mc.level, pos);
     }
 
-    /** What the spout holds, from its own tank. */
     private FluidStack fluid(SpoutBlockEntity spout) {
         IFluidHandler tank = Minecraft.getInstance().level.getCapability(Capabilities.FluidHandler.BLOCK, spout.getBlockPos(), null);
         return tank == null || tank.getTanks() == 0 ? FluidStack.EMPTY : tank.getFluidInTank(0);
     }
 
-    /** Client tick: droplets on the work while the spout pours; the flare when Create fills it (its countdown at 5). */
     @Override
     public void tick() {
         super.tick();
@@ -77,12 +74,12 @@ public class SpoutScene extends DepotScene {
             color = Colors.of(fluid(spout));
         }
         if (ticks > 5) {
-            Fx.motes(spot.add(0, 0.12, 0), 0.07, 1, Colors.red(color), Colors.green(color), Colors.blue(color), 0.0);
+            Fx.motes(plate().add(0, 0.12, 0), 0.07, 1, Colors.red(color), Colors.green(color), Colors.blue(color), 0.0);
         }
         if (lastTicks > 5 && ticks >= 0 && ticks <= 5) {
             fills++;
             flareAt = Scene.clock();
-            Fx.motes(spot.add(0, 0.1, 0), 0.1, 10, Colors.red(color), Colors.green(color), Colors.blue(color), 0.2);
+            Fx.motes(plate().add(0, 0.1, 0), 0.1, 10, Colors.red(color), Colors.green(color), Colors.blue(color), 0.2);
         }
         lastTicks = ticks;
     }
@@ -97,7 +94,6 @@ public class SpoutScene extends DepotScene {
         return color;
     }
 
-    /** The flare: a glow over the filled work, growing as it fades. */
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         super.drawWorld(pose, buffers, camera, light);
@@ -107,7 +103,7 @@ public class SpoutScene extends DepotScene {
         }
         double k = age / FLARE_TIME;
         float fade = (float) (1 - Anim.inOutCubic(k));
-        EnchantFx.billboard(pose, buffers, Minecraft.getInstance().gameRenderer.getMainCamera(), spot.add(0, 0.12, 0),
+        EnchantFx.billboard(pose, buffers, Minecraft.getInstance().gameRenderer.getMainCamera(), plate().add(0, 0.12, 0),
                 FLARE_FROM + (FLARE_TO - FLARE_FROM) * k, age, EnchantFx.GLOW,
                 Colors.red(color) * fade, Colors.green(color) * fade, Colors.blue(color) * fade);
     }

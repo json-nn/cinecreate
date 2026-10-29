@@ -27,10 +27,8 @@ import org.minechestplate.cinecreate.registry.CineMenus;
  */
 public class BasinMenu extends BridgeMenu {
     public static final int INPUTS = 9, OUTPUTS = 9, SLOTS = INPUTS + OUTPUTS;
-    /** Button: Create's click on the basin with what the hand carries (a fluid container, or nothing). */
     public static final int USE = 0;
 
-    /** Server: slots over the basin itself. */
     private BasinMenu(int id, Inventory inventory, BlockPos pos, BasinBlockEntity basin) {
         super(CineMenus.BASIN.get(), id, inventory, pos, SLOTS, INPUTS);
         for (int i = 0; i < INPUTS; i++) {
@@ -42,7 +40,6 @@ public class BasinMenu extends BridgeMenu {
         addPlayerInventory(inventory, 8, 84);
     }
 
-    /** Client: a plain copy the server keeps in sync; what goes in is guessed from the client's basin. */
     private BasinMenu(int id, Inventory inventory, BlockPos pos) {
         super(CineMenus.BASIN.get(), id, inventory, pos, SLOTS, INPUTS);
         SimpleContainer copy = new SimpleContainer(SLOTS);
@@ -77,12 +74,11 @@ public class BasinMenu extends BridgeMenu {
         return 8 + i * 18;
     }
 
-    /** Whether the basin's inventory would take some of this into that slot (Create's insertion, tried without doing it). */
+    /** Whether the basin's inventory would take some of this into that slot (Create's insertion, simulated). */
     static boolean takes(IItemHandlerModifiable inventory, int slot, ItemStack stack) {
         return !stack.isEmpty() && inventory.insertItem(slot, stack, true).getCount() < stack.getCount();
     }
 
-    /** Server: Create's click on the basin's opening with what the hand carries (never with an item to drop in). */
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (id != USE || !(player instanceof ServerPlayer server) || !(player.level().getBlockEntity(pos) instanceof BasinBlockEntity)
@@ -92,7 +88,6 @@ public class BasinMenu extends BridgeMenu {
         return Bridge.useWithCarried(server, this, pos, Direction.UP) != ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
     }
 
-    /** Server: a slot of one of the basin's inventories, read and written there. */
     private static final class HandlerSlot extends Slot {
         private final IItemHandlerModifiable inventory;
         private final int index;

@@ -28,7 +28,6 @@ public class MillstoneMenu extends BridgeMenu {
     public static final int MOUTH = 0, OUTPUTS = 9, SLOTS = 1 + OUTPUTS;
     public static final int TAKE_ALL = 0;
 
-    /** Server: slots over the millstone. */
     private MillstoneMenu(int id, Inventory inventory, BlockPos pos, MillstoneBlockEntity millstone) {
         super(CineMenus.MILLSTONE.get(), id, inventory, pos, SLOTS, 1);
         addSlot(new MouthSlot(millstone));
@@ -38,7 +37,6 @@ public class MillstoneMenu extends BridgeMenu {
         addPlayerInventory(inventory, 8, 84);
     }
 
-    /** Client: a plain copy the server keeps in sync. */
     private MillstoneMenu(int id, Inventory inventory, BlockPos pos) {
         super(CineMenus.MILLSTONE.get(), id, inventory, pos, SLOTS, 1);
         SimpleContainer copy = new SimpleContainer(SLOTS);
@@ -69,7 +67,6 @@ public class MillstoneMenu extends BridgeMenu {
                 Component.translatable("cinecreate.menu.millstone"));
     }
 
-    /** Server: Create's empty-handed click (only with nothing carried). */
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (id != TAKE_ALL || !getCarried().isEmpty() || !(player instanceof ServerPlayer server)
@@ -130,7 +127,6 @@ public class MillstoneMenu extends BridgeMenu {
         }
     }
 
-    /** Server: what the millstone has ground, taken out only. */
     private static final class OutputSlot extends Slot {
         private final MillstoneBlockEntity millstone;
         private final int index;

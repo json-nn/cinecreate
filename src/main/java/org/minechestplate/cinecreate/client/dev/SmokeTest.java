@@ -1,7 +1,16 @@
 package org.minechestplate.cinecreate.client.dev;
 
+import dev.dyslexic.cinematic.api.client.AddonScenes;
+
+import net.neoforged.fml.loading.FMLPaths;
+
+import java.util.Locale;
+
+import java.nio.file.Path;
+
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.AllItems;
+import com.simibubi.create.content.contraptions.actors.seat.SeatBlock;
 import com.simibubi.create.content.fluids.spout.SpoutBlockEntity;
 import com.simibubi.create.content.kinetics.base.IRotate;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
@@ -85,6 +94,7 @@ import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.client.ClientHooks;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -94,15 +104,21 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 import org.minechestplate.cinecreate.CineCreate;
+import org.minechestplate.cinecreate.bridge.Bridge;
 import org.minechestplate.cinecreate.bridge.BridgeMenu;
 import org.minechestplate.cinecreate.bridge.DepotMenu;
 import org.minechestplate.cinecreate.client.ClientConfig;
 import org.minechestplate.cinecreate.client.FrameCounter;
-import org.minechestplate.cinecreate.client.Notices;
+import org.minechestplate.cinecreate.client.CiNotice;
 import org.minechestplate.cinecreate.client.WorkKey;
 import org.minechestplate.cinecreate.client.scene.BasinScene;
 import org.minechestplate.cinecreate.client.scene.BurnerScene;
+import org.minechestplate.cinecreate.client.ClientMode;
 import org.minechestplate.cinecreate.client.scene.CineStation;
+import org.minechestplate.cinecreate.client.scene.ClientModeStation;
+import org.minechestplate.cinecreate.client.layout.LayoutPanel;
+import org.minechestplate.cinecreate.client.layout.Layouts;
+import org.minechestplate.cinecreate.client.scene.DevView;
 import org.minechestplate.cinecreate.client.scene.CrafterScene;
 import org.minechestplate.cinecreate.client.scene.CrankScene;
 import org.minechestplate.cinecreate.client.scene.DeployerScene;
@@ -125,20 +141,10 @@ import org.minechestplate.cinecreate.station.SceneKinds;
 import org.minechestplate.cinecreate.station.Trigger;
 
 /**
- * Development only, with {@code -Dcinecreate.smoke=true} (the {@code smoke} run; never active otherwise). Opens a flat
- * test world, builds a depot, and works it the way a player would: real right-clicks, slot clicks and clicks on the
- * scene, then the trigger policy (the config switched to KEY and OFF, the key pressed), then a press over the depot
- * (pressing at full speed, impacts timed against Create's head, a stopped press, a click on the press itself), then a
- * Valve Handle on a shaft (the angle set by scroll, a turn and a turn back as Create stores them, a refused click, a
- * dye), then Mechanical Crafters (a chest filled into a 3×3 by toss with a Slot Cover in the middle, the crafting
- * watched to the result, a lone crafter filled by hand, a 10×10 refused by hand and worked with an Extendo Grip, a
- * section at a time), then a Hand Crank,
- * a Basin under a mixer on a Blaze Burner and an empty burner, then Wave 2: an Item Drain, depots under a Spout and a
- * Deployer and in a fan's smoking stream, a Deployer's hand-off, a Millstone, a Mechanical Saw's dial and cut, and a
- * Weighted Ejector's throw followed by the camera. After each step it
- * checks the blocks and the inventory on the integrated server, and it saves screenshots of the scene to
- * {@code run-smoke/screenshots}. The window is maximized (full screen, with its borders). The results go to
- * {@code run-smoke/smoke-results.txt}, then the game quits.
+ * Development only, with {@code -Dcinecreate.smoke=true} (the {@code smoke} run; not in the release jar). Opens a flat
+ * test world, builds each machine and works its scene the way a player would (real right-clicks, slot clicks and clicks
+ * on the scene), checks the blocks and the inventory on the integrated server, saves screenshots to
+ * {@code run-smoke/screenshots} and the results to {@code run-smoke/smoke-results.txt}, then quits.
  */
 public final class SmokeTest {
     private SmokeTest() {}
@@ -150,56 +156,35 @@ public final class SmokeTest {
     private static final String WORLD = "cinecreate_smoke";
     /** Flat world: the grass is at -61, so things stand at -60. */
     private static final BlockPos DEPOT = new BlockPos(0, -60, 3);
-    /** The press over the depot, and the creative motor on its shaft. */
     private static final BlockPos PRESS = DEPOT.above(Composites.PRESS_HEIGHT), MOTOR = PRESS.east();
     private static final int IRON = 16;
-    /** Iron laid under the press, and the speed it runs at (Create's top speed: the effects must stay readable). */
+    /** The press runs at Create's top speed: its effects must stay readable even there. */
     private static final int PRESS_IRON = 4, PRESS_RPM = 256;
-    /** A copper Valve Handle facing north, fixed to a shaft behind it. */
     private static final BlockPos VALVE = new BlockPos(-3, -59, 3), VALVE_SHAFT = VALVE.south();
-    /** Hotbar slot of the dye. */
     private static final int DYE = 3;
-    /** The wheel's first turn as the server stores it ({@code getIndependentAngle} without a partial tick). */
     private static float turnedTo;
-    /**
-     * A 3×3 wall of Mechanical Crafters facing north, by its top left as the player sees it (the columns run west); a
-     * cogwheel beside its bottom row turns it, from a creative motor behind the cogwheel.
-     */
+    /** A 3×3 wall of crafters facing north, by its top left as the player sees it (the columns run west). */
     private static final BlockPos CRAFTERS = new BlockPos(9, -58, 3);
     private static final BlockPos CRAFTER_COG = new BlockPos(6, -60, 3), CRAFTER_MOTOR = CRAFTER_COG.south();
     private static final int CRAFTER_RPM = 64;
-    /** A crafter by itself, apart from the wall. */
     private static final BlockPos LONE_CRAFTER = new BlockPos(12, -60, 3);
-    /** A 10×10 wall, the largest Create builds (framing only), by its top left. */
     private static final BlockPos BIG_CRAFTERS = new BlockPos(27, -51, 3);
-    /** Hotbar: the planks, the Slot Cover, and a slot left empty to click with. */
     private static final int PLANKS = 0, SLOT_COVER = 1, EMPTY_HAND = 8;
     /** A chest: every window of the 3×3 (reading order) but the middle one, which gets the Slot Cover. */
     private static final int[] RING = {0, 1, 2, 3, 5, 6, 7, 8};
     private static final int MIDDLE = 4;
     private static int filled;
     private static boolean tossShot;
-    /** A Hand Crank facing north, fixed to an encased shaft behind it. */
     private static final BlockPos CRANK = new BlockPos(-6, -59, 3), CRANK_SHAFT = CRANK.south();
-    /** The handle's angle when the crank was last let go of, and the way the shaft turned first. */
     private static double crankAngle;
     private static float crankOn;
-    /**
-     * A Basin on a Blaze Burner, a Mechanical Mixer two blocks above it, turned by a cogwheel beside it (the mixer is a
-     * cog itself, with no shaft) with a creative motor on top; and an empty burner (no blaze yet) beside them.
-     */
     private static final BlockPos BASIN = new BlockPos(-10, -59, 3), BASIN_BURNER = BASIN.below(), MIXER = BASIN.above(2),
             MIXER_COG = MIXER.east(), MIXER_MOTOR = MIXER_COG.above(), EMPTY_BURNER = new BlockPos(-13, -60, 3);
     private static final int MIXER_RPM = 64;
-    /** Hotbar for the basin and the burner. */
     private static final int ANDESITE = 0, NUGGET = 1, WATER = 2, COAL = 3, CAKE = 4, DIRT = 5, FLINT = 6;
     /**
-     * Wave 2 (M7), a row west of the basin, every machine facing the player north of it: an Item Drain; a depot under a
-     * Spout; a depot under a Deployer pointing down (a creative motor beside it); a Deployer facing north at chest
-     * height, for the hand-off; a depot in the stream of an Encased Fan blowing west through a lit campfire (along the
-     * row, away from the player: a campfire's full bottom face would stop a stream blowing up), its motor behind it; a
-     * Millstone on its motor; a Mechanical Saw facing up, its motor beside it; a Weighted Ejector throwing south, its
-     * motor beside it.
+     * Wave 2: a row west of the basin, every machine facing the player north of it. The fan blows west along the row
+     * through a lit campfire onto its depot: a campfire's full bottom face would stop a stream blowing up.
      */
     private static final BlockPos DRAIN = new BlockPos(-17, -60, 3), SPOUT_DEPOT = new BlockPos(-20, -60, 3),
             SPOUT = SPOUT_DEPOT.above(2), DEPLOYING_DEPOT = new BlockPos(-23, -60, 3), DOWN_DEPLOYER = DEPLOYING_DEPOT.above(2),
@@ -208,16 +193,17 @@ public final class SmokeTest {
             SAW = new BlockPos(-35, -60, 3), EJECTOR = new BlockPos(-38, -60, 3);
     /** Turned this way, this fan (facing west, its motor behind it) blows its air out; at -64 RPM it pulls it in. */
     private static final int DEPLOYER_RPM = 64, FAN_RPM = 64, MILL_RPM = 128, SAW_RPM = 32, EJECTOR_RPM = 64;
-    /** How far the ejector throws (south, on the level). */
     private static final int EJECTOR_REACH = 4;
-    /** Hotbar for Wave 2 (the handed-over slot holds andesite, later the ejector's iron). */
     private static final int FULL_BUCKET = 0, EMPTY_BUCKET = 1, BOTTLE = 2, LOG = 3, HANDED = 4, BEEF = 5, WHEAT = 6, STONE_SLOT = 7;
-    /** The hotbar slot of the Extendo Grip; a basin on two blocks of stone, out of a bare arm's reach. */
     private static final int GRIP = 3;
+    /** A basin on two blocks of stone, out of a bare arm's reach. */
     private static final BlockPos HIGH_BASIN = new BlockPos(4, -58, 8);
     private static final int TIMEOUT = 400;
 
-    /** One step: runs every tick after its delay until it reports done. */
+    /**
+     * One step: runs every tick once its delay has passed, until it returns true (false: try again next tick);
+     * {@link #TIMEOUT} ticks more and it fails.
+     */
     private interface Action {
         boolean run(Minecraft mc);
     }
@@ -267,6 +253,30 @@ public final class SmokeTest {
                     return false;
                 }
                 check("right-click on the plate starts the depot scene", Scene.station instanceof DepotScene);
+                return true;
+            }),
+            new Step("layout editor", 4, mc -> {
+                LayoutPanel.smokeForce = true;
+                LayoutPanel.open();
+                check("developer mode: the layout editor opens on the depot's scene", LayoutPanel.isOpen());
+                SmokeTest.plateBefore = Layouts.point(scene(), 0);
+                return true;
+            }),
+            new Step("layout edited", 6, mc -> {
+                shot(mc, "01b_layout_editor");
+                LayoutPanel.smokeSet(0, 0, 4.0);
+                Vec3 moved = Layouts.point(scene(), 0).subtract(SmokeTest.plateBefore);
+                scene().hover();
+                Path saved = FMLPaths.CONFIGDIR.get().resolve("cinecreate-layouts.json");
+                check("the plate spot moves 4 px to the right, the hand goes there, and the profile is saved (moved "
+                        + String.format(Locale.ROOT, "%.3f", moved.dot(scene().layoutAcross())) + ")",
+                        Math.abs(moved.dot(scene().layoutAcross()) - 0.25) < 1e-6 && scene().aim.distanceTo(Layouts.point(scene(), 0)) < 1e-6
+                                && !LayoutPanel.isOpen() && Files.exists(saved));
+                LayoutPanel.smokeReset();
+                check("reset, the plate spot is back where it was", Layouts.point(scene(), 0).distanceTo(SmokeTest.plateBefore) < 1e-6);
+                LayoutPanel.smokeForce = false;
+                DepotScene.smokePin = false;
+                scene().clearCursor();
                 return true;
             }),
             new Step("pick up the iron", 20, mc -> {
@@ -319,7 +329,6 @@ public final class SmokeTest {
                 }
                 check("right click sets down just one", depot(mc).getCount() == 1 && carried(mc).getCount() == IRON - 1);
                 DepotMenu menu = scene().menu();
-                // the rest back into the hotbar, then a shift-click from the drawer moves it onto the depot
                 mc.gameMode.handleInventoryMouseClick(menu.containerId, menu.inventoryIndex(0), 0, ClickType.PICKUP, mc.player);
                 scene().quickMove(0, menu.inventoryIndex(0));
                 return true;
@@ -342,7 +351,7 @@ public final class SmokeTest {
                                 && p.containerMenu == p.inventoryMenu));
                 return true;
             }),
-            // ---- the trigger policy (M2): switched in the config the way its screen does it, without relogging ----
+            // ---- the trigger policy: switched in the config the way its screen does it, without relogging ----
             new Step("key mode", 10, mc -> {
                 ClientConfig.set(SceneKinds.DEPOT, Trigger.KEY);
                 onServer(mc, player -> standAtStart(player) && reset(player));
@@ -376,7 +385,7 @@ public final class SmokeTest {
             }),
             new Step("left the key scene", 0, mc -> Scene.phase == Scene.Phase.NONE),
             new Step("off mode", 10, mc -> {
-                // все сцены депо выключены (с M7 их пять): иначе CI по-прежнему видит у блока рабочие стороны (лимит 13)
+                // все сцены депо выключены (их пять): иначе CI по-прежнему видит у блока рабочие стороны (ROADMAP, ограничение 13)
                 for (SceneKind kind : SceneBlocks.DEPOT.kinds()) {
                     ClientConfig.set(kind, Trigger.OFF);
                 }
@@ -406,7 +415,7 @@ public final class SmokeTest {
                 Scene.abort();
                 return true;
             }),
-            // ---- pressing (M3): a press over the depot, driven by a creative motor ----
+            // ---- pressing: a press over the depot, driven by a creative motor ----
             new Step("build the press", 2, mc -> {
                 // голое депо снова по клавише (как по умолчанию): правый клик начнёт сцену только из-за пресса
                 ClientConfig.set(SceneKinds.DEPOT, Trigger.KEY);
@@ -482,7 +491,7 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left again", 0, mc -> Scene.phase == Scene.Phase.NONE),
-            // ---- the Valve Handle (M4): on a shaft, turned by hand ----
+            // ---- the Valve Handle: on a shaft, turned by hand ----
             new Step("build the valve", 2, mc -> {
                 ClientConfig.set(SceneKinds.VALVE, Trigger.USE);
                 onServer(mc, player -> buildValve(player) && reset(player) && give(player, DYE, new ItemStack(Items.RED_DYE))
@@ -521,9 +530,16 @@ public final class SmokeTest {
                 shot(mc, "14_valve_angle");
                 return true;
             }),
-            new Step("angle stored", 16, mc -> {
+            new Step("angle steady", 0, mc -> {
+                // каждый тик, пока сервер не примет: на табло ни разу не мелькнул прежний угол
+                SmokeTest.angleFlicker |= valveScene().shownAngle() != 90;
+                return valveSetting(mc) == 90 && ++SmokeTest.angleTicks >= 10;
+            }),
+            new Step("angle stored", 0, mc -> {
                 check("the scroll wheel sets the angle on the valve itself (server: " + valveSetting(mc) + "°)",
                         valveSetting(mc) == 90);
+                check("and the readout keeps the new angle while the server takes it, never the old one for a moment",
+                        !SmokeTest.angleFlicker);
                 valveScene().click(0, false);
                 return true;
             }),
@@ -563,6 +579,15 @@ public final class SmokeTest {
                 float back = valveWheel(mc);
                 check("the right button turns it back the other way (server: " + turnedTo + "° -> " + back + "°)",
                         back == -turnedTo && valveScene().clunks == 2);
+                DevView.smokeShow(true);
+                return true;
+            }),
+            new Step("developer view", 4, mc -> {
+                shot(mc, "13b_developer_view");
+                List<String> lines = DevView.smokeLines();
+                check("developer mode: the panel names the scene and its own state (" + String.join(" | ", lines) + ")",
+                        lines.get(0).startsWith("ValveScene") && lines.stream().anyMatch(line -> line.startsWith("angle: shown")));
+                DevView.smokeShow(false);
                 Scene.leave();
                 return true;
             }),
@@ -591,7 +616,7 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left the red valve", 0, mc -> Scene.phase == Scene.Phase.NONE),
-            // ---- Mechanical Crafters (M5): a chest filled into a 3×3, a Slot Cover, the watch; framing; the limit ----
+            // ---- Mechanical Crafters: a chest filled into a 3×3, a Slot Cover, the watch; framing; the limit ----
             new Step("build the crafters", 2, mc -> {
                 ClientConfig.set(SceneKinds.CRAFTER, Trigger.USE);
                 onServer(mc, player -> buildCrafters(player) && crafterKit(player) && standBefore(player, CRAFTERS.west(1), 2.5));
@@ -746,6 +771,87 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left the lone crafter", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("lone crafter 3.5 off", 2, mc -> onServer(mc, player -> {
+                player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+                SmokeTest.farFrom = null;
+                return standBefore(player, LONE_CRAFTER, 3.5);
+            })),
+            new Step("right-click: lone crafter 3.5 off", 4, mc -> use(mc, EMPTY_HAND, LONE_CRAFTER, Direction.NORTH)),
+            new Step("lone crafter 3.5 off: started", 0, mc -> farCrafter(mc, "lone crafter 3.5 off", false)),
+            new Step("lone crafter 3.5 off: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("lone crafter 3.5 off, grip", 2, mc -> onServer(mc, player -> {
+                offhandGrip(player);
+                SmokeTest.farFrom = null;
+                return standBefore(player, LONE_CRAFTER, 3.5);
+            })),
+            new Step("right-click: lone crafter 3.5 off, grip", 4, mc -> use(mc, EMPTY_HAND, LONE_CRAFTER, Direction.NORTH)),
+            new Step("lone crafter 3.5 off, grip: started", 0, mc -> farCrafter(mc, "lone crafter 3.5 off, grip", true)),
+            new Step("lone crafter 3.5 off, grip: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("lone crafter 4.5 off, grip", 2, mc -> onServer(mc, player -> {
+                offhandGrip(player);
+                SmokeTest.farFrom = null;
+                return standBefore(player, LONE_CRAFTER, 4.5);
+            })),
+            new Step("right-click: lone crafter 4.5 off, grip", 4, mc -> use(mc, EMPTY_HAND, LONE_CRAFTER, Direction.NORTH)),
+            new Step("lone crafter 4.5 off, grip: started", 0, mc -> farCrafter(mc, "lone crafter 4.5 off, grip", true)),
+            new Step("lone crafter 4.5 off, grip: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("3x3 crafters 4.0 off", 2, mc -> onServer(mc, player -> {
+                player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+                SmokeTest.farFrom = null;
+                return standBefore(player, crafterCell(1, 2), 4.0);
+            })),
+            new Step("right-click: 3x3 crafters 4.0 off", 4, mc -> use(mc, EMPTY_HAND, crafterCell(1, 2), Direction.NORTH)),
+            new Step("3x3 crafters 4.0 off: started", 0, mc -> farCrafter(mc, "3x3 crafters 4.0 off", false)),
+            new Step("3x3 crafters 4.0 off: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("3x3 crafters 4.0 off, grip", 2, mc -> onServer(mc, player -> {
+                offhandGrip(player);
+                SmokeTest.farFrom = null;
+                return standBefore(player, crafterCell(1, 2), 4.0);
+            })),
+            new Step("right-click: 3x3 crafters 4.0 off, grip", 4, mc -> use(mc, EMPTY_HAND, crafterCell(1, 2), Direction.NORTH)),
+            new Step("3x3 crafters 4.0 off, grip: started", 0, mc -> farCrafter(mc, "3x3 crafters 4.0 off, grip", true)),
+            new Step("3x3 crafters 4.0 off, grip: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("bare, flying before the 3x3", 2, mc -> {
+                mc.player.getAbilities().flying = true;
+                return onServer(mc, player -> {
+                    player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+                    // а перед стеной пусто: камень проверки «камень перед крафтерами» остаётся от частичных прогонов
+                    BlockPos.betweenClosed(CRAFTERS.offset(-3, -2, -4), CRAFTERS.offset(1, 1, -1))
+                            .forEach(at -> player.serverLevel().setBlockAndUpdate(at, Blocks.AIR.defaultBlockState()));
+                    return fly(player, true) && standAt(player, crafterCell(1, 1).getX() + 0.5, -58.5, CRAFTERS.getZ() - 3.5);
+                });
+            }),
+            new Step("right-click: bare, flying before the 3x3", 4, mc -> {
+                mc.player.getAbilities().flying = true;
+                return use(mc, EMPTY_HAND, crafterCell(1, 1), Direction.NORTH);
+            }),
+            new Step("bare, flying before the 3x3: refused", 30, mc -> {
+                List<String> cards = CiNotice.recent();
+                check("crafters, flying bare-handed 3.5 off: no walk that cannot happen, the notice says to land or take a grip (" + Scene.phase + ", " + cards + ")",
+                        Scene.phase == Scene.Phase.NONE && cards.stream().anyMatch(card -> card.startsWith("Flying")));
+                return true;
+            }),
+            new Step("grip, on a ledge before the 3x3", 2, mc -> {
+                mc.player.getAbilities().flying = false;
+                return onServer(mc, player -> {
+                fly(player, false);
+                offhandGrip(player);
+                SmokeTest.farFrom = null;
+                BlockPos ledge = new BlockPos(crafterCell(1, 1).getX(), -59, CRAFTERS.getZ() - 4);
+                player.serverLevel().setBlockAndUpdate(ledge, Blocks.STONE.defaultBlockState());
+                return standAt(player, ledge.getX() + 0.5, -58, ledge.getZ() + 0.5);
+                });
+            }),
+            new Step("right-click: grip, on a ledge before the 3x3", 4, mc -> {
+                SmokeTest.farClicked = crafterCell(1, 2);
+                return use(mc, EMPTY_HAND, SmokeTest.farClicked, Direction.NORTH);
+            }),
+            new Step("grip, on a ledge before the 3x3: started", 0, mc -> farCrafter(mc, "grip, on a ledge 2 above the bottom row", true)),
+            new Step("grip, on a ledge before the 3x3: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("crafters: grip off", 2, mc -> onServer(mc, player -> {
+                player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+                return true;
+            })),
             new Step("build a 10×10", 2, mc -> {
                 onServer(mc, player -> buildBigCrafters(player) && crafterKit(player) && give(player, GRIP, AllItems.EXTENDO_GRIP.asStack())
                         && standBefore(player, BIG_CRAFTERS.west(5), 2.5));
@@ -753,7 +859,7 @@ public final class SmokeTest {
             }),
             new Step("right-click the 10×10 by hand", 4, mc -> use(mc, EMPTY_HAND, BIG_CRAFTERS.west(5).below(8), Direction.NORTH)),
             new Step("too big by hand", 20, mc -> {
-                List<String> cards = Notices.shown();
+                List<String> cards = CiNotice.recent();
                 check("a 10×10 wall is too big to work by hand: no scene, and the card asks for an Extendo Grip (" + cards + ")",
                         Scene.phase == Scene.Phase.NONE && cards.stream().anyMatch(card -> card.startsWith("Too big") && card.contains("Extendo Grip")));
                 return true;
@@ -828,7 +934,7 @@ public final class SmokeTest {
                 return pinAndClick(SmokeTest.bigCell);
             }),
             new Step("out of the grip's reach", 6, mc -> {
-                List<String> cards = Notices.shown();
+                List<String> cards = CiNotice.recent();
                 BlockPos cell = SmokeTest.bigCell < 0 ? null : crafterScene().group().cells().get(SmokeTest.bigCell);
                 check("a window at the top is out of the grip's reach from the ground: refused, and the card says so (" + cards + ")",
                         cell != null && crafterScene().denials == 1 && crafterWindow(mc, cell).isEmpty()
@@ -838,7 +944,33 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left the 10×10", 0, mc -> Scene.phase == Scene.Phase.NONE),
-            // ---- the Hand Crank (M6): turned by hand, held as long as the player likes ----
+            new Step("grip, flying at the 10x10's middle", 2, mc -> {
+                mc.player.getAbilities().flying = true;
+                return onServer(mc, player -> {
+                    offhandGrip(player);
+                    SmokeTest.farFrom = null;
+                    return fly(player, true) && standAt(player, BIG_CRAFTERS.west(5).getX() + 0.5, -56, BIG_CRAFTERS.getZ() - 3.5);
+                });
+            }),
+            new Step("right-click: grip, flying at the 10x10's middle", 4, mc -> {
+                // на земле клиент сам снимает полёт: включается, когда игрок уже в воздухе
+                mc.player.getAbilities().flying = true;
+                mc.player.setDeltaMovement(Vec3.ZERO);
+                SmokeTest.farClicked = BIG_CRAFTERS.west(5).below(5);
+                return use(mc, EMPTY_HAND, SmokeTest.farClicked, Direction.NORTH);
+            }),
+            new Step("grip, flying at the 10x10's middle: started", 0, mc -> farCrafter(mc, "grip, flying at the 10x10's middle", true)),
+            new Step("grip, flying at the 10x10's middle: left", 0, mc -> {
+                mc.player.getAbilities().flying = false;
+                return Scene.phase == Scene.Phase.NONE;
+            }),
+            new Step("crafters in the air: done", 2, mc -> onServer(mc, player -> {
+                fly(player, false);
+                player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+                player.serverLevel().setBlockAndUpdate(new BlockPos(crafterCell(1, 1).getX(), -59, CRAFTERS.getZ() - 4), Blocks.AIR.defaultBlockState());
+                return standAtStart(player);
+            })),
+            // ---- the Hand Crank: turned by hand, held as long as the player likes ----
             new Step("build the crank", 2, mc -> {
                 ClientConfig.set(SceneKinds.CRANK, Trigger.USE);
                 onServer(mc, player -> buildCrank(player) && crafterKit(player) && standAtCrank(player));
@@ -912,7 +1044,7 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left the crank", 0, mc -> Scene.phase == Scene.Phase.NONE),
-            // ---- the Basin under a mixer, on a Blaze Burner (M6) ----
+            // ---- the Basin under a mixer, on a Blaze Burner ----
             new Step("build the basin", 2, mc -> {
                 ClientConfig.set(SceneKinds.BASIN, Trigger.USE);
                 ClientConfig.set(SceneKinds.BURNER, Trigger.USE);
@@ -1019,7 +1151,7 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left the basin", 0, mc -> Scene.phase == Scene.Phase.NONE),
-            // ---- the Blaze Burner under it (M6): fed, and a cake ----
+            // ---- the Blaze Burner under it: fed, and a cake ----
             new Step("to the burner", 2, mc -> onServer(mc, player -> standBefore(player, BASIN_BURNER, 1.6))),
             new Step("right-click the burner", 4, mc -> use(mc, EMPTY_HAND, BASIN_BURNER, Direction.NORTH)),
             new Step("burner scene", 0, mc -> {
@@ -1132,9 +1264,9 @@ public final class SmokeTest {
                 }
                 return Scene.phase == Scene.Phase.NONE;
             }),
-            // ---- Wave 2 (M7): the drain, a spout, a deployer and a fan over depots, the hand-off, the millstone, the saw, the ejector ----
+            // ---- Wave 2: the drain, a spout, a deployer and a fan over depots, the hand-off, the millstone, the saw, the ejector ----
             new Step("build the drain", 2, mc -> {
-                // the depot composites were switched OFF with the depot in the M2 steps
+                // the depot composites were switched OFF with the depot in the trigger-policy steps
                 for (SceneKind kind : List.of(SceneKinds.SPOUTING, SceneKinds.DEPLOYING, SceneKinds.FAN, SceneKinds.DRAIN,
                         SceneKinds.DEPLOYER, SceneKinds.MILLSTONE, SceneKinds.SAW, SceneKinds.EJECTOR)) {
                     ClientConfig.set(kind, Trigger.USE);
@@ -1225,8 +1357,9 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left the spout", 0, mc -> Scene.phase == Scene.Phase.NONE),
-            new Step("to the deployer over a depot", 2, mc -> onServer(mc, player -> wave2Kit(player)
-                    && deployerHolds(player, DOWN_DEPLOYER, AllItems.ANDESITE_ALLOY.asStack()) && standBefore(player, DEPLOYING_DEPOT, 1.6))),
+            new Step("to the deployer over a depot", 2, mc -> onServer(mc, player -> wave2Kit(player) && emptyDepot(player, DEPLOYING_DEPOT)
+                    && deployerMotor(player, DEPLOYER_RPM) && deployerHolds(player, DOWN_DEPLOYER, AllItems.ANDESITE_ALLOY.asStack())
+                    && standBefore(player, DEPLOYING_DEPOT, 1.6))),
             new Step("right-click under the deployer", 4, mc -> use(mc, EMPTY_HAND, DEPLOYING_DEPOT, Direction.UP)),
             new Step("deploying scene", 0, mc -> {
                 if (Scene.phase != Scene.Phase.ACTIVE) {
@@ -1255,6 +1388,47 @@ public final class SmokeTest {
                 check("the deployer punches down with the andesite alloy (" + deploying.punches + " punch), and the log becomes "
                         + "andesite casing (server: " + lying + ")", deploying.punches >= 1 && lying.is(AllBlocks.ANDESITE_CASING.asItem()));
                 DepotScene.smokePin = false;
+                // рука активатора, не выходя из сцены (мотор стоит: иначе активатор тут же пустит в ход то, что дали)
+                onServer(mc, player -> deployerMotor(player, 0));
+                DeployingScene.smokeHand = true;
+                pickUp(mc, HANDED);
+                return true;
+            }),
+            new Step("hand the deployer andesite", 12, mc -> {
+                // CI играет взятие из ящика ходом сцены: пока он идёт, клик пропал бы
+                if (moving()) {
+                    return false;
+                }
+                ((DeployingScene) Scene.station).hoverHand();
+                ((DeployingScene) Scene.station).click(0, false);
+                return true;
+            }),
+            new Step("the deployer took it", 0, mc -> {
+                if (moving()) {
+                    return false;
+                }
+                ItemStack held = deployerHeld(mc, DOWN_DEPLOYER);
+                shot(mc, "34b_deployer_hand");
+                check("from the depot's scene, the hand reaches up to the deployer's hand and gives it the andesite (server: "
+                        + held + "; the hand: " + carried(mc) + ")", held.is(Items.ANDESITE) && carried(mc).isEmpty()
+                        && ((DeployingScene) Scene.station).swaps == 1);
+                return true;
+            }),
+            new Step("take it back", 12, mc -> {
+                ((DeployingScene) Scene.station).hoverHand();
+                ((DeployingScene) Scene.station).click(0, false);
+                return true;
+            }),
+            new Step("took it back", 0, mc -> {
+                if (moving()) {
+                    return false;
+                }
+                ItemStack held = deployerHeld(mc, DOWN_DEPLOYER);
+                check("an empty hand takes it back into the scene's hand (server: " + held + "; the hand: " + carried(mc) + ")",
+                        held.isEmpty() && carried(mc).is(Items.ANDESITE));
+                pickUp(mc, HANDED);
+                DeployingScene.smokeHand = false;
+                onServer(mc, player -> deployerMotor(player, DEPLOYER_RPM));
                 Scene.leave();
                 return true;
             }),
@@ -1294,6 +1468,62 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left the deployer", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            // ---- deployers facing up and down: the hand-off works at every facing ----
+            new Step("a deployer facing up", 2, mc -> onServer(mc, player -> {
+                ServerLevel level = player.serverLevel();
+                renew(level, SmokeTest.UP_DEPLOYER, AllBlocks.DEPLOYER.getDefaultState().setValue(BlockStateProperties.FACING, Direction.UP));
+                return wave2Kit(player) && deployerHolds(player, SmokeTest.UP_DEPLOYER, new ItemStack(Items.FLINT))
+                        && standBefore(player, SmokeTest.UP_DEPLOYER, 0.5);
+            })),
+            new Step("right-click the deployer facing up", 4, mc -> use(mc, EMPTY_HAND, SmokeTest.UP_DEPLOYER, Direction.UP)),
+            new Step("hand-off facing up", 0, mc -> handOffBegins(mc, "up")),
+            new Step("hand it up", 6, mc -> handOver()),
+            new Step("handed up", 0, mc -> handedOver(mc, SmokeTest.UP_DEPLOYER, "35b_handoff_up")),
+            new Step("left the deployer facing up", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("a deployer facing down", 2, mc -> onServer(mc, player -> {
+                ServerLevel level = player.serverLevel();
+                level.setBlockAndUpdate(SmokeTest.DOWN_HANDOFF.below(), Blocks.AIR.defaultBlockState());
+                level.setBlockAndUpdate(SmokeTest.DOWN_HANDOFF.below(2), Blocks.AIR.defaultBlockState());
+                renew(level, SmokeTest.DOWN_HANDOFF, AllBlocks.DEPLOYER.getDefaultState().setValue(BlockStateProperties.FACING, Direction.DOWN));
+                return wave2Kit(player) && deployerHolds(player, SmokeTest.DOWN_HANDOFF, new ItemStack(Items.FLINT))
+                        && standBefore(player, SmokeTest.DOWN_HANDOFF, 0.6);
+            })),
+            new Step("right-click the deployer facing down", 4, mc -> use(mc, EMPTY_HAND, SmokeTest.DOWN_HANDOFF, Direction.DOWN)),
+            new Step("hand-off facing down", 0, mc -> handOffBegins(mc, "down")),
+            new Step("hand it down", 6, mc -> handOver()),
+            new Step("handed down", 0, mc -> handedOver(mc, SmokeTest.DOWN_HANDOFF, "35c_handoff_down")),
+            new Step("left the deployer facing down", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("grip beside the deployer", 2, mc -> onServer(mc, player -> {
+                wave2Kit(player);
+                offhandGrip(player);
+                deployerHolds(player, HANDOFF_DEPLOYER, new ItemStack(Items.FLINT));
+                player.teleportTo(player.serverLevel(), HANDOFF_DEPLOYER.getX() + 3.0, -60, HANDOFF_DEPLOYER.getZ() - 2.5, 50f, 20f);
+                return true;
+            })),
+            new Step("right-click the deployer from aside", 4, mc -> {
+                SmokeTest.gripFrom = mc.player.position();
+                return use(mc, EMPTY_HAND, HANDOFF_DEPLOYER, Direction.NORTH);
+            }),
+            new Step("from aside", 0, mc -> {
+                if (Scene.phase == Scene.Phase.NONE && CiNotice.shown().isEmpty() && SmokeTest.gripFrom != null) {
+                    return false;
+                }
+                if (Scene.phase != Scene.Phase.ACTIVE && Scene.phase != Scene.Phase.NONE) {
+                    return false;
+                }
+                double moved = mc.player.position().distanceTo(SmokeTest.gripFrom);
+                check("with the grip, at an angle to the deployer's hand, the player never walks up (moved " + String.format("%.2f", moved)
+                        + "; " + (Scene.active() ? "worked from here" : "refused: " + CiNotice.shown()) + ")", moved < 0.1);
+                if (Scene.active()) {
+                    Scene.leave();
+                }
+                return true;
+            }),
+            new Step("left the deployer from aside", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("grip off again", 2, mc -> onServer(mc, player -> {
+                player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+                return true;
+            })),
             new Step("to the fan stream", 2, mc -> onServer(mc, player -> wave2Kit(player) && fanMotor(player, FAN_RPM)
                     && standBefore(player, FAN_DEPOT, 1.6))),
             new Step("the stream blows", 0, mc -> {
@@ -1383,7 +1613,14 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left the millstone", 0, mc -> Scene.phase == Scene.Phase.NONE),
-            new Step("to the saw", 2, mc -> onServer(mc, player -> wave2Kit(player) && standBefore(player, SAW, 1.6))),
+            new Step("to the saw", 2, mc -> onServer(mc, player -> {
+                // фильтр от прошлого прогона (с -PsmokeFrom мир не пересобирается) сузил бы диск до одной формы
+                FilteringBehaviour filter = BlockEntityBehaviour.get(player.serverLevel(), SAW, FilteringBehaviour.TYPE);
+                if (filter != null) {
+                    filter.setFilter(ItemStack.EMPTY);
+                }
+                return wave2Kit(player) && standBefore(player, SAW, 1.6);
+            })),
             new Step("right-click the saw", 4, mc -> use(mc, EMPTY_HAND, SAW, Direction.UP)),
             new Step("saw scene", 0, mc -> {
                 if (Scene.phase != Scene.Phase.ACTIVE) {
@@ -1432,6 +1669,39 @@ public final class SmokeTest {
                     return false;
                 }
                 check("the saw cuts the shape chosen on the dial (" + sawScene().lastCut + ")", sawScene().lastCut.is(Items.STONE_BRICKS));
+                pickUp(mc, HANDED);
+                return true;
+            }),
+            new Step("andesite over the dial", 20, mc -> {
+                List<ItemStack> dial = sawScene().dial();
+                int[] turn = sawScene().dialTurn();
+                shot(mc, "39b_saw_dial");
+                check("andesite in hand: all " + dial.size() + " of its shapes hang on the dial, " + SawScene.DIAL + " at a time, as on "
+                        + "CI's stonecutter (it turns " + turn[1] + " further)", dial.size() > SawScene.DIAL && turn[0] == 0 && turn[1] == dial.size() - SawScene.DIAL);
+                for (int i = 0; i < 4; i++) {
+                    sawScene().scroll(-1);
+                }
+                return true;
+            }),
+            new Step("the dial turned", 16, mc -> {
+                int[] turn = sawScene().dialTurn();
+                shot(mc, "39c_saw_dial_turned");
+                check("the wheel turns the dial, a shape at a time (turned " + turn[0] + ")", turn[0] == 4);
+                return true;
+            }),
+            new Step("choose the last shape", 16, mc -> {
+                List<ItemStack> dial = sawScene().dial();
+                SmokeTest.lastShape = dial.get(dial.size() - 1).copy();
+                sawScene().hoverShape(dial.size() - 1);
+                sawScene().click(0, false);
+                return true;
+            }),
+            new Step("the last shape chosen", 0, mc -> {
+                if (moving() || !filterOn(mc, SAW).is(SmokeTest.lastShape.getItem())) {
+                    return false;
+                }
+                check("the last of them can be chosen too (server: " + filterOn(mc, SAW) + ")", true);
+                pickUp(mc, HANDED);
                 SawScene.smokePin = false;
                 Scene.leave();
                 return true;
@@ -1536,7 +1806,7 @@ public final class SmokeTest {
                         + filter + "), and the depot's scene does not start", filter.is(Items.STRIPPED_OAK_LOG) && Scene.phase == Scene.Phase.NONE);
                 return true;
             }),
-            // ---- blocks where the player would stand (the user's report after M7): never a view through them, and a card says why ----
+            // ---- blocks where the player would stand: never a view through them, and a card says why ----
             new Step("stone before the crafters", 2, mc -> onServer(mc, player -> {
                 buildCrafters(player);
                 crafterKit(player);
@@ -1574,7 +1844,7 @@ public final class SmokeTest {
             })),
             new Step("click from the stone", 4, mc -> use(mc, EMPTY_HAND, crafterCell(1, 0), Direction.NORTH)),
             new Step("refused on the stone", 20, mc -> {
-                List<String> cards = Notices.shown();
+                List<String> cards = CiNotice.recent();
                 check("standing on the stone, above the crafters' bottom row: no scene, and the card says it is too low (" + cards + ")",
                         Scene.phase == Scene.Phase.NONE && cards.stream().anyMatch(card -> card.startsWith("Too low")));
                 return true;
@@ -1585,7 +1855,7 @@ public final class SmokeTest {
             })),
             new Step("click from behind", 4, mc -> use(mc, EMPTY_HAND, crafterCell(1, 0), Direction.NORTH)),
             new Step("refused behind", 20, mc -> {
-                List<String> cards = Notices.shown();
+                List<String> cards = CiNotice.recent();
                 shot(mc, "42_notice");
                 check("behind the stone, no scene (its view would pass through the stone), and the card names it (" + cards + ")",
                         Scene.phase == Scene.Phase.NONE && cards.stream().anyMatch(card -> card.contains("Stone")));
@@ -1641,7 +1911,7 @@ public final class SmokeTest {
                 if (Scene.phase != Scene.Phase.ACTIVE || !(Scene.station instanceof DepotScene scene) || scene.fromAfar()) {
                     return false;
                 }
-                List<String> cards = Notices.shown();
+                List<String> cards = CiNotice.recent();
                 double off = Math.hypot(mc.player.getX() - 0.5, mc.player.getZ() - 3.5);
                 check("put away, the grip no longer reaches: the scene starts again and the player walks up ("
                         + String.format("%.2f", off) + " from the depot; " + cards + ")",
@@ -1666,7 +1936,7 @@ public final class SmokeTest {
             })),
             new Step("bare hands at the high basin", 4, mc -> use(mc, EMPTY_HAND, HIGH_BASIN, Direction.UP)),
             new Step("too high bare", 20, mc -> {
-                List<String> cards = Notices.shown();
+                List<String> cards = CiNotice.recent();
                 check("a basin 2.1 blocks up is out of a bare arm's reach: no scene, and the card says a grip would reach it (" + cards + ")",
                         Scene.phase == Scene.Phase.NONE && cards.stream().anyMatch(card -> card.startsWith("Too high") && card.contains("Extendo Grip")));
                 return true;
@@ -1715,7 +1985,7 @@ public final class SmokeTest {
                 if (Scene.phase != Scene.Phase.NONE) {
                     return false;
                 }
-                List<String> cards = Notices.shown();
+                List<String> cards = CiNotice.recent();
                 check("letting go of the grip drops the player off the rim: the scene ends, and the card says so (" + cards + ")",
                         cards.stream().anyMatch(card -> card.startsWith("You let go")));
                 BasinScene.smokePin = false;
@@ -1810,14 +2080,409 @@ public final class SmokeTest {
                 Scene.leave();
                 return true;
             }),
-            new Step("left the basin with the grip", 0, mc -> Scene.phase == Scene.Phase.NONE));
+            new Step("left the basin with the grip", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            // ---- the grip's claw at every other machine, worked from three blocks off (the grip in the off hand) ----
+            new Step("grip at the crank", 2, mc -> {
+                ClientConfig.set(SceneKinds.CRANK, Trigger.USE);
+                return onServer(mc, player -> {
+                    player.getInventory().clearContent();
+                    player.getFoodData().setFoodLevel(20);
+                    return offhandGrip(player) && standBefore(player, CRANK, SmokeTest.GRIP_OFF);
+                });
+            }),
+            new Step("right-click the crank from afar", 4, mc -> use(mc, EMPTY_HAND, CRANK, Direction.NORTH)),
+            new Step("crank from afar", 0, mc -> {
+                if (Scene.phase != Scene.Phase.ACTIVE) {
+                    return false;
+                }
+                check("three blocks from the Hand Crank, with the grip, its scene starts where the player stands",
+                        Scene.station instanceof CrankScene scene && scene.fromAfar());
+                crankScene().hold(0);
+                return true;
+            }),
+            new Step("the claw cranks", 20, mc -> {
+                shot(mc, "49_grip_crank");
+                return true;
+            }),
+            new Step("cranked by the claw", 6, mc -> {
+                float shaft = shaftSpeed(mc, CRANK_SHAFT);
+                check("both hands on the grip's handle, its claw turns the crank: the shaft turns (server: " + shaft + " RPM)", shaft != 0);
+                crankScene().hold(-1);
+                Scene.leave();
+                return true;
+            }),
+            new Step("left the crank from afar", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("grip at the burner", 2, mc -> onServer(mc, player -> {
+                renew(player.serverLevel(), BASIN_BURNER, AllBlocks.BLAZE_BURNER.getDefaultState()
+                        .setValue(BlazeBurnerBlock.HEAT_LEVEL, HeatLevel.SMOULDERING));
+                player.getInventory().clearContent();
+                give(player, COAL, new ItemStack(Items.COAL, 2));
+                return offhandGrip(player) && standBefore(player, BASIN_BURNER, SmokeTest.GRIP_OFF);
+            })),
+            new Step("right-click the burner from afar", 4, mc -> use(mc, EMPTY_HAND, BASIN_BURNER, Direction.NORTH)),
+            new Step("burner from afar", 0, mc -> {
+                if (Scene.phase != Scene.Phase.ACTIVE) {
+                    return false;
+                }
+                check("three blocks from a Blaze Burner, with the grip, its scene starts where the player stands",
+                        Scene.station instanceof BurnerScene scene && scene.fromAfar());
+                BurnerScene.smokePin = true;
+                pickUp(mc, COAL);
+                return true;
+            }),
+            new Step("the claw feeds coal", 6, mc -> {
+                if (moving()) {
+                    return false;
+                }
+                burnerClick();
+                return true;
+            }),
+            new Step("feeding with the claw", 8, mc -> {
+                shot(mc, "50_grip_burner");
+                return true;
+            }),
+            new Step("fed by the claw", 0, mc -> {
+                if (moving()) {
+                    return false;
+                }
+                HeatLevel heat = heat(mc, BASIN_BURNER);
+                check("the claw pushes the coal in through the cage, no toss: the blaze kindles (server: " + heat + ")",
+                        heat == HeatLevel.KINDLED && carried(mc).getCount() == 1);
+                pickUp(mc, COAL);
+                BurnerScene.smokePin = false;
+                Scene.leave();
+                return true;
+            }),
+            new Step("left the burner from afar", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("grip at the drain", 2, mc -> onServer(mc, player -> {
+                renew(player.serverLevel(), DRAIN, AllBlocks.ITEM_DRAIN.getDefaultState());
+                return wave2Kit(player) && offhandGrip(player) && standBefore(player, DRAIN, SmokeTest.GRIP_OFF);
+            })),
+            new Step("right-click the drain from afar", 4, mc -> use(mc, EMPTY_HAND, DRAIN, Direction.UP)),
+            new Step("drain from afar", 0, mc -> {
+                if (Scene.phase != Scene.Phase.ACTIVE) {
+                    return false;
+                }
+                check("three blocks from an Item Drain, with the grip, its scene starts where the player stands",
+                        Scene.station instanceof DrainScene scene && scene.fromAfar());
+                DrainScene.smokePin = true;
+                pickUp(mc, FULL_BUCKET);
+                return true;
+            }),
+            new Step("the claw lays the bucket", 6, mc -> {
+                if (moving()) {
+                    return false;
+                }
+                drainScene().hover();
+                drainScene().click(0, false);
+                return true;
+            }),
+            new Step("laid by the claw", 8, mc -> {
+                shot(mc, "51_grip_drain");
+                return true;
+            }),
+            new Step("drained from afar", 0, mc -> {
+                if (drainFluid(mc) < 1000) {
+                    return false;
+                }
+                check("the claw lays the water bucket on the grate, and it is drained (server: " + drainFluid(mc) + " mB)", true);
+                DrainScene.smokePin = false;
+                Scene.leave();
+                return true;
+            }),
+            new Step("left the drain from afar", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("grip at the deployer's hand", 2, mc -> onServer(mc, player -> wave2Kit(player) && offhandGrip(player)
+                    && deployerHolds(player, HANDOFF_DEPLOYER, new ItemStack(Items.FLINT)) && standBefore(player, HANDOFF_DEPLOYER, SmokeTest.GRIP_OFF))),
+            new Step("right-click the deployer's hand from afar", 4, mc -> use(mc, EMPTY_HAND, HANDOFF_DEPLOYER, Direction.NORTH)),
+            new Step("hand-off from afar", 0, mc -> {
+                if (Scene.phase != Scene.Phase.ACTIVE) {
+                    return false;
+                }
+                check("three blocks from a Deployer's hand, with the grip, the hand-off starts where the player stands",
+                        Scene.station instanceof DeployerScene scene && scene.fromAfar());
+                DeployerScene.smokePin = true;
+                pickUp(mc, HANDED);
+                return true;
+            }),
+            new Step("claw to claw", 6, mc -> {
+                if (moving()) {
+                    return false;
+                }
+                ((DeployerScene) Scene.station).hover();
+                ((DeployerScene) Scene.station).click(0, false);
+                return true;
+            }),
+            new Step("handing over claw to claw", 6, mc -> {
+                shot(mc, "52_grip_handoff");
+                return true;
+            }),
+            new Step("handed over claw to claw", 0, mc -> {
+                if (moving()) {
+                    return false;
+                }
+                ItemStack held = deployerHeld(mc, HANDOFF_DEPLOYER);
+                check("claw to claw: the deployer takes the andesite from the grip's claw and gives back its flint (server: "
+                        + held + ")", held.is(Items.ANDESITE) && carried(mc).is(Items.FLINT));
+                pickUp(mc, HANDED);
+                DeployerScene.smokePin = false;
+                Scene.leave();
+                return true;
+            }),
+            new Step("left the deployer from afar", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("grip at the millstone", 2, mc -> onServer(mc, player -> {
+                renew(player.serverLevel(), MILLSTONE, AllBlocks.MILLSTONE.getDefaultState());
+                return wave2Kit(player) && offhandGrip(player) && standBefore(player, MILLSTONE, SmokeTest.GRIP_OFF);
+            })),
+            new Step("right-click the millstone from afar", 4, mc -> use(mc, EMPTY_HAND, MILLSTONE, Direction.UP)),
+            new Step("millstone from afar", 0, mc -> {
+                if (Scene.phase != Scene.Phase.ACTIVE) {
+                    return false;
+                }
+                check("three blocks from a Millstone, with the grip, its scene starts where the player stands",
+                        Scene.station instanceof MillstoneScene scene && scene.fromAfar());
+                MillstoneScene.smokePin = true;
+                pickUp(mc, WHEAT);
+                return true;
+            }),
+            new Step("the claw pours the wheat", 6, mc -> {
+                if (moving()) {
+                    return false;
+                }
+                millstoneScene().hover();
+                millstoneScene().click(0, false);
+                return true;
+            }),
+            new Step("pouring with the claw", 8, mc -> {
+                shot(mc, "53_grip_millstone");
+                return true;
+            }),
+            new Step("ground from afar", 0, mc -> {
+                if (!onServer(mc, p -> p.serverLevel().getBlockEntity(MILLSTONE) instanceof MillstoneBlockEntity millstone
+                        && millstone.inputInv.getStackInSlot(0).isEmpty() && !millstone.outputInv.getStackInSlot(0).isEmpty())) {
+                    return false;
+                }
+                check("the claw pours the wheat into the mouth, and it is ground (server)", millstoneScene().pours == 1);
+                millstoneScene().hover();
+                millstoneScene().click(0, false);
+                return true;
+            }),
+            new Step("gathered by the claw", 4, mc -> {
+                if (moving() || !onServer(mc, p -> p.getInventory().countItem(AllItems.WHEAT_FLOUR.get()) >= 1)) {
+                    return false;
+                }
+                check("and gathers the flour into the inventory (server)", true);
+                MillstoneScene.smokePin = false;
+                Scene.leave();
+                return true;
+            }),
+            new Step("left the millstone from afar", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("grip at the saw", 2, mc -> onServer(mc, player -> {
+                FilteringBehaviour filter = BlockEntityBehaviour.get(player.serverLevel(), SAW, FilteringBehaviour.TYPE);
+                if (filter != null) {
+                    filter.setFilter(new ItemStack(Items.STONE_BRICKS));
+                }
+                return wave2Kit(player) && offhandGrip(player) && standBefore(player, SAW, SmokeTest.GRIP_OFF);
+            })),
+            new Step("right-click the saw from afar", 4, mc -> use(mc, EMPTY_HAND, SAW, Direction.UP)),
+            new Step("saw from afar", 0, mc -> {
+                if (Scene.phase != Scene.Phase.ACTIVE) {
+                    return false;
+                }
+                check("three blocks from a Mechanical Saw, with the grip, its scene starts where the player stands",
+                        Scene.station instanceof SawScene scene && scene.fromAfar());
+                SawScene.smokePin = true;
+                pickUp(mc, STONE_SLOT);
+                return true;
+            }),
+            new Step("the claw lays the stone", 6, mc -> {
+                if (moving()) {
+                    return false;
+                }
+                sawScene().hoverTable();
+                sawScene().click(1, false);
+                return true;
+            }),
+            new Step("the claw pushes it in", 0, mc -> {
+                if (!sawScene().cutting() || sawScene().progress() < 0.3) {
+                    return false;
+                }
+                shot(mc, "54_grip_saw");
+                check("the claw lays one stone on the table and pushes it into the blade with Create's progress ("
+                        + String.format("%.2f", sawScene().progress()) + ")", sawScene().laid == 1);
+                return true;
+            }),
+            new Step("cut from afar", 0, mc -> {
+                if (sawScene().cuts < 1) {
+                    return false;
+                }
+                check("the saw cuts it (" + sawScene().lastCut + ")", sawScene().lastCut.is(Items.STONE_BRICKS));
+                pickUp(mc, STONE_SLOT);
+                SawScene.smokePin = false;
+                Scene.leave();
+                return true;
+            }),
+            new Step("left the saw from afar", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("the grip put away", 2, mc -> onServer(mc, player -> {
+                player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+                return true;
+            })),
+            // ---- the edge of the grip's reach, and a player on a seat ----
+            new Step("grip at the edge of reach", 2, mc -> {
+                ClientConfig.set(SceneKinds.DEPOT, Trigger.USE);
+                return onServer(mc, player -> {
+                    reset(player);
+                    give(player, GRIP, AllItems.EXTENDO_GRIP.asStack());
+                    player.teleportTo(player.serverLevel(), 0.5, -60, DEPOT.getZ() + 0.5 - SmokeTest.EDGE, 0f, 20f);
+                    return true;
+                });
+            }),
+            new Step("right-click from the edge", 4, mc -> use(mc, GRIP, Direction.UP)),
+            new Step("from the edge", 0, mc -> Scene.phase == Scene.Phase.ACTIVE),
+            new Step("held from the edge", 40, mc -> {
+                check("at the edge of the grip's reach (" + SmokeTest.EDGE + " from the depot), the scene starts and holds (" + Scene.phase + ")",
+                        Scene.phase == Scene.Phase.ACTIVE && Scene.station instanceof DepotScene);
+                Scene.leave();
+                return true;
+            }),
+            new Step("left the edge", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("grip beyond the scenes' reach", 2, mc -> onServer(mc, player -> {
+                reset(player);
+                player.getInventory().removeItem(player.getInventory().getItem(GRIP));
+                player.setItemInHand(InteractionHand.OFF_HAND, AllItems.EXTENDO_GRIP.asStack());
+                player.teleportTo(player.serverLevel(), 0.5, -60, DEPOT.getZ() + 0.5 - SmokeTest.BEYOND, 0f, 20f);
+                return true;
+            })),
+            new Step("right-click from beyond", 4, mc -> use(mc, 0, Direction.UP)),
+            new Step("from beyond", 30, mc -> {
+                check("beyond the scenes' reach (" + SmokeTest.BEYOND + " from the depot) but within the grip's, the click is Create's: "
+                        + "no scene, and the iron goes on the depot (" + Scene.phase + ", server: " + depot(mc) + ")",
+                        Scene.phase == Scene.Phase.NONE && depot(mc).is(Items.IRON_INGOT));
+                return onServer(mc, player -> {
+                    player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+                    return true;
+                });
+            }),
+            new Step("a seat before the depot", 2, mc -> onServer(mc, player -> {
+                ServerLevel level = player.serverLevel();
+                reset(player);
+                player.getInventory().removeItem(player.getInventory().getItem(GRIP));
+                level.setBlockAndUpdate(SmokeTest.SEAT, AllBlocks.SEATS.get(DyeColor.WHITE).getDefaultState());
+                player.teleportTo(level, SmokeTest.SEAT.getX() + 0.5, SmokeTest.SEAT.getY() + 0.5, SmokeTest.SEAT.getZ() + 0.5, 0f, 40f);
+                SeatBlock.sitDown(level, SmokeTest.SEAT, player);
+                return true;
+            })),
+            new Step("right-click from the seat", 10, mc -> mc.player.isPassenger() && use(mc, 0, Direction.UP)),
+            new Step("seated scene", 0, mc -> Scene.phase == Scene.Phase.ACTIVE),
+            new Step("held from the seat", 40, mc -> {
+                check("seated before the depot, its scene starts and holds (" + Scene.phase + ", passenger " + mc.player.isPassenger() + ")",
+                        Scene.phase == Scene.Phase.ACTIVE && Scene.station instanceof DepotScene);
+                Scene.leave();
+                return true;
+            }),
+            new Step("left the seat's scene", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("off the seat", 2, mc -> onServer(mc, player -> {
+                player.stopRiding();
+                player.serverLevel().setBlockAndUpdate(SmokeTest.SEAT, Blocks.AIR.defaultBlockState());
+                return true;
+            })),
+            new Step("a seat away from the depot", 4, mc -> onServer(mc, player -> {
+                ServerLevel level = player.serverLevel();
+                reset(player);
+                BlockPos seat = SmokeTest.SEAT.north(2);
+                level.setBlockAndUpdate(seat, AllBlocks.SEATS.get(DyeColor.WHITE).getDefaultState());
+                player.teleportTo(level, seat.getX() + 0.5, seat.getY() + 0.5, seat.getZ() + 0.5, 0f, 30f);
+                SeatBlock.sitDown(level, seat, player);
+                return true;
+            })),
+            new Step("right-click from the far seat", 10, mc -> mc.player.isPassenger() && use(mc, 0, Direction.UP)),
+            new Step("from the far seat", 30, mc -> {
+                List<String> cards = CiNotice.recent();
+                check("seated three blocks from the depot: no walk that cannot happen, the card says to get up, and the click is "
+                        + "Create's own (" + Scene.phase + ", " + cards + ", server: " + depot(mc) + ")", Scene.phase == Scene.Phase.NONE
+                        && cards.stream().anyMatch(card -> card.startsWith("Seated")) && depot(mc).is(Items.IRON_INGOT));
+                if (Scene.active()) {
+                    Scene.leave();
+                }
+                return true;
+            }),
+            new Step("left the far seat's scene", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("off the far seat", 2, mc -> onServer(mc, player -> {
+                player.stopRiding();
+                player.serverLevel().setBlockAndUpdate(SmokeTest.SEAT.north(2), Blocks.AIR.defaultBlockState());
+                return true;
+            })),
+            // ---- client mode: a server without the add-on (both sides act so), Create's own clicks played out ----
+            new Step("client mode", 2, mc -> {
+                Bridge.devNoAddon = true;
+                ClientMode.force(true);
+                ClientConfig.set(SceneKinds.DEPOT, Trigger.USE);
+                return onServer(mc, player -> reset(player) && standAtStart(player));
+            }),
+            new Step("right-click the depot in client mode", 4, mc -> {
+                if (!settled(mc, DEPOT)) {
+                    return false;
+                }
+                // настоящее нажатие: сперва событие клавиши (там начинается сцена режима клиента), клик — только если его не взяли
+                mc.player.getInventory().selected = 0;
+                BlockHitResult hit = new BlockHitResult(Vec3.atBottomCenterOf(DEPOT).add(0, SceneBlocks.DEPOT_TOP, 0), Direction.UP, DEPOT, false);
+                mc.hitResult = hit;
+                if (!ClientHooks.onClickInput(1, mc.options.keyUse, InteractionHand.MAIN_HAND).isCanceled()) {
+                    mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+                }
+                return true;
+            }),
+            new Step("client-mode scene", 0, mc -> {
+                if (Scene.phase != Scene.Phase.ACTIVE) {
+                    return false;
+                }
+                check("on a server without the add-on, with client mode on, a right-click on the depot plays a client-mode scene,"
+                        + " and the click itself never reaches the server (the iron stays in hand: " + mc.player.getMainHandItem() + ")",
+                        Scene.station instanceof ClientModeStation && mc.player.getMainHandItem().is(Items.IRON_INGOT) && depot(mc).isEmpty());
+                return true;
+            }),
+            new Step("client-mode set down", 6, mc -> {
+                ((ClientModeStation) Scene.station).hover();
+                ((ClientModeStation) Scene.station).click(0, false);
+                return true;
+            }),
+            new Step("client-mode laid", 14, mc -> {
+                shot(mc, "55_client_mode");
+                check("its click is Create's own, with the item in hand: the iron goes on the depot (server: " + depot(mc) + ")",
+                        depot(mc).is(Items.IRON_INGOT));
+                ((ClientModeStation) Scene.station).keyPressed(GLFW.GLFW_KEY_9);
+                return true;
+            }),
+            new Step("client-mode take", 4, mc -> {
+                ((ClientModeStation) Scene.station).hover();
+                ((ClientModeStation) Scene.station).click(0, false);
+                return true;
+            }),
+            new Step("client-mode taken", 14, mc -> {
+                check("1–9 choose the item in hand; with an empty hand Create's click takes the iron back (server: " + depot(mc) + ")",
+                        depot(mc).isEmpty() && mc.player.getInventory().selected == 8);
+                Scene.leave();
+                return true;
+            }),
+            new Step("left client mode's scene", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            new Step("client mode off", 2, mc -> {
+                Bridge.devNoAddon = false;
+                ClientMode.force(false);
+                return true;
+            }));
+
+    private static boolean angleFlicker;
+    private static int angleTicks;
+    private static ItemStack lastShape = ItemStack.EMPTY;
+
+    /** From the depot's middle: just within and beyond {@link Bridge#SCENE_REACH}; a seat in front of the depot. */
+    private static final double EDGE = 5.8, BEYOND = 6.5;
+    private static final BlockPos SEAT = DEPOT.north();
 
     private static boolean started;
     private static boolean finished;
     private static int index;
     private static int waited;
 
-    /** How long each step took (ticks, then wall time), for the slowest ones in the results. */
     private record Took(String step, int ticks, long millis) {}
 
     private static final List<Took> TOOK = new ArrayList<>();
@@ -2012,7 +2677,7 @@ public final class SmokeTest {
 
     private static boolean setUp(Minecraft mc) {
         check("our depot station is registered with Cinematic Interactions", SceneBlocks.registered(SceneBlocks.DEPOT));
-        // шаги M1 проверяют запуск правым кликом, а по умолчанию у депо KEY
+        // первые шаги проверяют запуск правым кликом, а по умолчанию у депо KEY
         ClientConfig.set(SceneKinds.DEPOT, Trigger.USE);
         ClientConfig.set(SceneKinds.PRESSING, Trigger.USE);
         onServer(mc, player -> {
@@ -2094,10 +2759,7 @@ public final class SmokeTest {
         return use(mc, hotbar, pos, face, Vec3.atCenterOf(pos).add(Vec3.atLowerCornerOf(face.getNormal()).scale(0.5)));
     }
 
-    /**
-     * A real right-click, once the client has caught up with the server (else not yet: the step tries again next tick):
-     * the player where the server has them, the block as the server has it, and no move of a scene playing.
-     */
+    /** A real right-click, once {@link #settled} (else false: the step tries again next tick). */
     private static boolean use(Minecraft mc, int hotbar, BlockPos pos, Direction face, Vec3 at) {
         if (!settled(mc, pos)) {
             return false;
@@ -2107,7 +2769,10 @@ public final class SmokeTest {
         return true;
     }
 
-    /** The client has caught up with the server: the player stands where the server has them, the block is synced, no move plays. */
+    /**
+     * The client has caught up with the server: the player stands where the server has them (it ignores clicks until the
+     * client confirms a teleport), the block is synced, and no move of a scene plays.
+     */
     private static boolean settled(Minecraft mc, BlockPos pos) {
         if (moving()) {
             return false;
@@ -2117,7 +2782,6 @@ public final class SmokeTest {
         return onServer(mc, player -> player.position().distanceToSqr(here) < 1e-4 && player.serverLevel().getBlockState(pos).equals(state));
     }
 
-    /** A copper valve facing north, fixed to a shaft along the Z axis behind it. */
     private static boolean buildValve(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         level.setBlockAndUpdate(VALVE_SHAFT, AllBlocks.SHAFT.getDefaultState()
@@ -2127,7 +2791,6 @@ public final class SmokeTest {
         return true;
     }
 
-    /** Two blocks in front of the valve, looking at it. */
     private static boolean standAtValve(ServerPlayer player) {
         player.teleportTo(player.serverLevel(), VALVE.getX() + 0.5, -60, VALVE.getZ() - 1.4, 0f, 15f);
         return true;
@@ -2139,7 +2802,6 @@ public final class SmokeTest {
         return true;
     }
 
-    /** A press two blocks over the depot, and a creative motor on its shaft (turning at its default speed). */
     private static boolean buildPress(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         level.setBlockAndUpdate(PRESS, AllBlocks.MECHANICAL_PRESS.getDefaultState()
@@ -2181,7 +2843,6 @@ public final class SmokeTest {
                 ? v.angleInput.getValue() : 0);
     }
 
-    /** The 3×3's crafter at this column and row as the player sees it: columns from the left, rows from the top. */
     private static BlockPos crafterCell(int column, int row) {
         return CRAFTERS.west(column).below(row);
     }
@@ -2239,10 +2900,7 @@ public final class SmokeTest {
         return state;
     }
 
-    /**
-     * The crafters' corner of the test world, cleared: whatever the last run left there thrown away, and the flat
-     * world's animals too (a cow wandered in front of the 3×3 in a screenshot).
-     */
+    /** The crafters' corner cleared: what the last run left there, and the flat world's animals (they walk into shots). */
     private static void clearCrafters(ServerLevel level) {
         for (BlockPos at : BlockPos.betweenClosed(5, -60, 1, 28, -50, 5)) {
             level.setBlockAndUpdate(at, Blocks.AIR.defaultBlockState());
@@ -2251,7 +2909,6 @@ public final class SmokeTest {
         level.getEntitiesOfClass(Animal.class, new AABB(-6, -61, -8, 34, -46, 14)).forEach(Entity::discard);
     }
 
-    /** The hotbar for the crafters: nine planks (a chest's ring and one more), a Crafter Slot Cover, an empty hand. */
     private static boolean crafterKit(ServerPlayer player) {
         player.getInventory().clearContent();
         player.getInventory().setItem(PLANKS, new ItemStack(Items.OAK_PLANKS, 9));
@@ -2260,9 +2917,47 @@ public final class SmokeTest {
         return true;
     }
 
-    /** In front of crafters facing north, this far from their fronts, looking at them. */
+    /** This far north of the block, looking south at it (machines face north, toward the player). */
     private static boolean standBefore(ServerPlayer player, BlockPos column, double out) {
         player.teleportTo(player.serverLevel(), column.getX() + 0.5, -60, column.getZ() - out, 0f, 10f);
+        return true;
+    }
+
+    private static Vec3 farFrom, plateBefore;
+    private static BlockPos farClicked = BlockPos.ZERO;
+    private static int farWait;
+
+    private static boolean fly(ServerPlayer player, boolean on) {
+        player.getAbilities().flying = on;
+        player.onUpdateAbilities();
+        return true;
+    }
+
+    private static boolean standAt(ServerPlayer player, double x, double y, double z) {
+        player.teleportTo(player.serverLevel(), x, y, z, 0f, 10f);
+        return true;
+    }
+
+    /** A crafter clicked from afar: the scene starts (walked up to bare-handed, from here with the grip), or the check fails. */
+    private static boolean farCrafter(Minecraft mc, String name, boolean grip) {
+        if (SmokeTest.farFrom == null) {
+            SmokeTest.farFrom = mc.player.position();
+            SmokeTest.farWait = 0;
+        }
+        if (Scene.phase != Scene.Phase.ACTIVE && ++SmokeTest.farWait < 120) {
+            return false;
+        }
+        double moved = mc.player.position().distanceTo(SmokeTest.farFrom);
+        boolean started = Scene.phase == Scene.Phase.ACTIVE && Scene.station instanceof CrafterScene;
+        BlockState state = mc.level.getBlockState(SmokeTest.farClicked);
+        String why = "phase " + Scene.phase + ", notice " + CiNotice.recent() + ", sneaking " + mc.player.isSecondaryUseActive() + ", flying "
+                + mc.player.getAbilities().flying + ", on ground " + mc.player.onGround() + ", held " + mc.player.getMainHandItem() + ", block "
+                + state.getBlock() + ", scenes " + AddonScenes.available(state) + ", screen " + mc.screen;
+        check("crafters, " + name + ": the scene starts" + (grip ? " where the player stands" : "") + " ("
+                + (started ? "moved " + String.format("%.2f", moved) : why) + ")", started && (!grip || moved < 0.1));
+        if (Scene.active()) {
+            Scene.leave();
+        }
         return true;
     }
 
@@ -2285,7 +2980,10 @@ public final class SmokeTest {
         }
     }
 
-    /** A Blaze Burner with its blaze, a Basin on it, a Mechanical Mixer two above, its cog and motor; an empty burner beside. */
+    /**
+     * A Blaze Burner with its blaze, a Basin on it, a Mechanical Mixer two above (a cog itself: a cogwheel beside it
+     * turns it, with a creative motor on top); an empty burner (no blaze yet) beside them.
+     */
     private static boolean buildBasin(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         for (BlockPos at : BlockPos.betweenClosed(-14, -60, 1, -8, -55, 5)) {
@@ -2314,7 +3012,6 @@ public final class SmokeTest {
         return true;
     }
 
-    /** One andesite and one iron nugget (andesite alloy), a water bucket, coal, a Blaze Cake, dirt, flint and steel. */
     private static boolean basinKit(ServerPlayer player) {
         player.getInventory().clearContent();
         player.getInventory().setItem(ANDESITE, new ItemStack(Items.ANDESITE));
@@ -2347,7 +3044,6 @@ public final class SmokeTest {
         burnerScene().click(0, false);
     }
 
-    /** All the fluid in the basin, read on the server. */
     private static int basinFluid(Minecraft mc) {
         return onServer(mc, SmokeTest::basinFluid);
     }
@@ -2361,7 +3057,6 @@ public final class SmokeTest {
         return amount;
     }
 
-    /** The basin holds this item, in what went in or in what came out (server). */
     private static boolean basinHolds(Minecraft mc, Item item) {
         return onServer(mc, p -> {
             if (!(p.serverLevel().getBlockEntity(BASIN) instanceof BasinBlockEntity basin)) {
@@ -2378,7 +3073,6 @@ public final class SmokeTest {
         });
     }
 
-    /** What the basin holds and what the mixer does, for the log (server). */
     private static String basinContents(Minecraft mc) {
         return onServer(mc, p -> {
             StringBuilder said = new StringBuilder();
@@ -2416,7 +3110,6 @@ public final class SmokeTest {
                 && Crafters.covered(crafter));
     }
 
-    /** What a crafter's window holds, read on the server. */
     private static ItemStack crafterWindow(Minecraft mc, BlockPos cell) {
         return onServer(mc, p -> p.serverLevel().getBlockEntity(cell) instanceof MechanicalCrafterBlockEntity crafter
                 ? Crafters.held(crafter).copy() : ItemStack.EMPTY);
@@ -2431,13 +3124,11 @@ public final class SmokeTest {
         return crafterWindow(mc, crafterCell(1, 1)).isEmpty();
     }
 
-    /** The chest is in the player's inventory, or lies in front of the crafters. */
     private static boolean madeChest(Minecraft mc) {
         return onServer(mc, p -> p.getInventory().countItem(Items.CHEST) > 0 || !p.serverLevel().getEntitiesOfClass(ItemEntity.class,
                 new AABB(CRAFTERS).inflate(4), item -> item.getItem().is(Items.CHEST)).isEmpty());
     }
 
-    /** Every crafter of the 3×3 idle, with nothing in its window. */
     private static boolean crafterWallIdle(Minecraft mc) {
         return onServer(mc, p -> {
             for (int column = 0; column < 3; column++) {
@@ -2464,7 +3155,6 @@ public final class SmokeTest {
         return onServer(mc, p -> p.serverLevel().getBlockEntity(shaft) instanceof KineticBlockEntity k ? k.getSpeed() : 0f);
     }
 
-    /** A Hand Crank facing north, fixed to an andesite encased shaft along the Z axis behind it. */
     private static boolean buildCrank(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         level.setBlockAndUpdate(CRANK_SHAFT, AllBlocks.ANDESITE_ENCASED_SHAFT.getDefaultState()
@@ -2475,7 +3165,6 @@ public final class SmokeTest {
         return true;
     }
 
-    /** In front of the crank, looking at it. */
     private static boolean standAtCrank(ServerPlayer player) {
         player.teleportTo(player.serverLevel(), CRANK.getX() + 0.5, -60, CRANK.getZ() - 1.4, 0f, 15f);
         return true;
@@ -2490,14 +3179,14 @@ public final class SmokeTest {
         return mc.level.getBlockEntity(CRANK) instanceof HandCrankBlockEntity crank ? crank.getIndependentAngle(0) : Double.NaN;
     }
 
-    /** Wave 2 (M7): the row of machines, built afresh (what the last run left in them is dropped and cleared away). */
+    /** The Wave 2 row, built afresh (what the last run left in it is cleared away). */
     private static boolean buildWave2(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         for (BlockPos at : BlockPos.betweenClosed(-40, -60, 2, -15, -55, 9)) {
             level.setBlockAndUpdate(at, Blocks.AIR.defaultBlockState());
         }
         level.getEntitiesOfClass(ItemEntity.class, new AABB(-41, -62, 0, -14, -54, 12)).forEach(Entity::discard);
-        // the first M7 runs sank a fan under the depot: the ground is put back
+        // earlier runs sank a fan under the depot: the ground is put back
         level.setBlockAndUpdate(new BlockPos(-29, -61, 3), Blocks.GRASS_BLOCK.defaultBlockState());
         level.setBlockAndUpdate(new BlockPos(-29, -62, 3), Blocks.DIRT.defaultBlockState());
         level.setBlockAndUpdate(new BlockPos(-29, -63, 3), Blocks.DIRT.defaultBlockState());
@@ -2543,12 +3232,85 @@ public final class SmokeTest {
         }
     }
 
+    /** Nothing on this depot (what lies on it and what processing left), as a run starting part way may find it. */
+    private static boolean emptyDepot(ServerPlayer player, BlockPos pos) {
+        DepotBehaviour depot = BlockEntityBehaviour.get(player.serverLevel(), pos, DepotBehaviour.TYPE);
+        if (depot != null) {
+            depot.removeHeldItem();
+            for (int i = 1; i < depot.itemHandler.getSlots(); i++) {
+                depot.itemHandler.extractItem(i, Integer.MAX_VALUE, false);
+            }
+            depot.blockEntity.notifyUpdate();
+        }
+        return true;
+    }
+
+    /** Deployers for the hand-off facing up (on the ground) and down (its block one over the head), a row behind the others. */
+    private static final BlockPos UP_DEPLOYER = new BlockPos(-25, -60, 7), DOWN_HANDOFF = new BlockPos(-28, -58, 7);
+
+    private static boolean handOffBegins(Minecraft mc, String way) {
+        if (Scene.phase != Scene.Phase.ACTIVE) {
+            return false;
+        }
+        check("a right-click on the hand of a deployer facing " + way + " starts the hand-off", Scene.station instanceof DeployerScene);
+        DeployerScene.smokePin = true;
+        pickUp(mc, HANDED);
+        return true;
+    }
+
+    private static boolean handOver() {
+        if (moving()) {
+            return false;
+        }
+        ((DeployerScene) Scene.station).hover();
+        ((DeployerScene) Scene.station).click(0, false);
+        return true;
+    }
+
+    private static boolean handedOver(Minecraft mc, BlockPos deployer, String shot) {
+        if (moving()) {
+            return false;
+        }
+        ItemStack held = deployerHeld(mc, deployer);
+        shot(mc, shot);
+        check("the claw takes the andesite and the hand comes back with the flint (server: the deployer holds " + held + ")",
+                held.is(Items.ANDESITE) && carried(mc).is(Items.FLINT));
+        pickUp(mc, HANDED);
+        DeployerScene.smokePin = false;
+        Scene.leave();
+        return true;
+    }
+
+    /** How far from a machine the grip's claw tests stand (out of a bare arm's reach, well within the grip's). */
+    private static final double GRIP_OFF = 3.0;
+
+    /** An Extendo Grip in the off hand (the main hand stays free for the scene's clicks). */
+    private static boolean offhandGrip(ServerPlayer player) {
+        player.setItemInHand(InteractionHand.OFF_HAND, AllItems.EXTENDO_GRIP.asStack());
+        return true;
+    }
+
+    /** The block placed afresh (a new block entity: an empty tank, a cold burner), even where it already stands. */
+    private static void renew(ServerLevel level, BlockPos pos, BlockState state) {
+        level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        level.setBlockAndUpdate(pos, state);
+    }
+
+    /** The creative motor turning the deployer over the depot (as {@link #motorAlong} placed it). */
+    private static boolean deployerMotor(ServerPlayer player, int rpm) {
+        ServerLevel level = player.serverLevel();
+        BlockState state = level.getBlockState(DOWN_DEPLOYER);
+        if (state.getBlock() instanceof IRotate rotate) {
+            motorSpeed(level, DOWN_DEPLOYER.relative(Direction.get(Direction.AxisDirection.POSITIVE, rotate.getRotationAxis(state))), rpm);
+        }
+        return true;
+    }
+
     private static boolean fanMotor(ServerPlayer player, int rpm) {
         motorSpeed(player.serverLevel(), FAN_MOTOR, rpm);
         return true;
     }
 
-    /** A water bucket, an empty one, a glass bottle, a stripped log, andesite, raw beef, wheat, stone; slot 8 empty. */
     private static boolean wave2Kit(ServerPlayer player) {
         player.getInventory().clearContent();
         player.getInventory().setItem(FULL_BUCKET, new ItemStack(Items.WATER_BUCKET));
@@ -2574,7 +3336,6 @@ public final class SmokeTest {
         return true;
     }
 
-    /** What the deployer's hand holds, read on the server. */
     private static ItemStack deployerHeld(Minecraft mc, BlockPos deployer) {
         return onServer(mc, p -> {
             IItemHandler hand = p.serverLevel().getCapability(Capabilities.ItemHandler.BLOCK, deployer, null);
@@ -2591,7 +3352,6 @@ public final class SmokeTest {
         return give(player, HANDED, new ItemStack(Items.IRON_INGOT));
     }
 
-    /** All the fluid in the drain's tank, read on the server. */
     private static int drainFluid(Minecraft mc) {
         return onServer(mc, p -> {
             IFluidHandler tank = p.serverLevel().getCapability(Capabilities.FluidHandler.BLOCK, DRAIN, null);
@@ -2653,7 +3413,6 @@ public final class SmokeTest {
         return took;
     }
 
-    /** The block's filter, read on the server. */
     private static ItemStack filterOn(Minecraft mc, BlockPos pos) {
         return onServer(mc, p -> {
             FilteringBehaviour filter = BlockEntityBehaviour.get(p.serverLevel(), pos, FilteringBehaviour.TYPE);
@@ -2661,22 +3420,16 @@ public final class SmokeTest {
         });
     }
 
-    /** The 10×10's window being worked, and the look's pitch before turning up the wall. */
     private static int bigCell = -1;
     private static float lookedAt;
 
-    /** Where the player stood when the scene was begun from afar. */
     @Nullable
     private static Vec3 gripFrom;
 
-    /**
-     * The shortest the grip was drawn, fist to claw, since a scene was begun with it; whether it was drawn while the hands
-     * came up; whether that was shot.
-     */
     private static double shortestGrip;
     private static boolean gripComing, comingShot;
 
-    /** Notes how long the grip is drawn this tick, and shoots the scene once as the hands come up (when named). */
+    /** Notes the shortest grip drawn (fist to claw) and whether it came up with the hands; one shot as they rise (when named). */
     private static void sampleGrip(Minecraft mc, @Nullable String coming) {
         if (Scene.station instanceof CineStation<?> station) {
             double length = station.gripLength();
@@ -2691,11 +3444,9 @@ public final class SmokeTest {
         }
     }
 
-    /** Where the camera was when the ejector threw (the watch must not move it). */
     @Nullable
     private static Vec3 launchCamera;
 
-    /** Iron sheets on the depot (the stack on the plate and the outputs), read on the server. */
     private static int sheets(Minecraft mc) {
         return onServer(mc, player -> {
             DepotBehaviour depot = BlockEntityBehaviour.get(player.serverLevel(), DEPOT, DepotBehaviour.TYPE);
@@ -2759,7 +3510,6 @@ public final class SmokeTest {
         return mc.player.containerMenu.getCarried();
     }
 
-    /** What lies on the depot, read on the server. */
     private static ItemStack depot(Minecraft mc) {
         return onServer(mc, player -> {
             DepotBehaviour depot = BlockEntityBehaviour.get(player.serverLevel(), DEPOT, DepotBehaviour.TYPE);
@@ -2793,6 +3543,7 @@ public final class SmokeTest {
         DeployerScene.smokePin = false;
         MillstoneScene.smokePin = false;
         SawScene.smokePin = false;
+        DeployingScene.smokeHand = false;
         for (SceneKind kind : SceneKinds.all()) {
             ClientConfig.set(kind, kind.trigger());
         }

@@ -16,10 +16,8 @@ import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.station.Composites;
 
 /**
- * Bulk processing: the depot in an Encased Fan's stream (DESIGN §7.11). Laying the item on the plate, the player feels
- * the wind: the camera trembles and the view narrows a little, and the item is washed, smoked, blasted or haunted right
- * there, in the stream's colour; when it turns into the result, the screen flashes in that colour. For blasting and
- * haunting the free hand comes up to shield the eyes.
+ * Bulk processing: the depot in an Encased Fan's stream (DESIGN §7.11). The wind trembles the camera, the item is
+ * processed in the stream's colour and the result flashes in; for blasting and haunting the free hand shields the eyes.
  */
 public class FanScene extends DepotScene {
     /** The wind's tremble, and how much the view narrows. */
@@ -51,7 +49,7 @@ public class FanScene extends DepotScene {
         }
     }
 
-    /** Development: results seen appearing. */
+    /** Development (SmokeTest): results seen appearing. */
     public int results;
 
     @Nullable
@@ -78,13 +76,11 @@ public class FanScene extends DepotScene {
         return super.leanFov() - (kind == null ? 0 : NARROW);
     }
 
-    /** The wind: a small, steady tremble while the stream blows. */
     @Override
     public double cameraKick() {
         return kind == null ? 0 : WIND;
     }
 
-    /** For blasting and haunting the left hand comes up to the brow, shielding the eyes. */
     @Override
     protected Vec3 restAt(boolean right) {
         if (right || kind != Kind.BLASTING && kind != Kind.HAUNTING) {
@@ -94,7 +90,6 @@ public class FanScene extends DepotScene {
         return eye.add(forward().scale(0.32)).add(right().scale(-0.12)).add(0, 0.06, 0);
     }
 
-    /** Client tick: the stream works on the item (particles in its colour), and the result flashing in. */
     @Override
     public void tick() {
         super.tick();
@@ -105,7 +100,7 @@ public class FanScene extends DepotScene {
         ItemStack now = lying();
         if (kind != null && stream != null && stream.type() != null && !now.isEmpty() && mc.level != null
                 && stream.type().canProcess(now, mc.level)) {
-            Vec3 at = spot.add(0, 0.1, 0);
+            Vec3 at = plate().add(0, 0.1, 0);
             float r = Colors.red(kind.color), g = Colors.green(kind.color), b = Colors.blue(kind.color);
             switch (kind) {
                 case SPLASHING -> Fx.motes(at, 0.15, 2, r, g, b, 0.25);
@@ -136,7 +131,7 @@ public class FanScene extends DepotScene {
         return kind == null ? super.hint() : Component.translatable("cinecreate.hint.fan_processing." + kind.name().toLowerCase(Locale.ROOT));
     }
 
-    /** Development: what the stream does here, by Create's name ("splashing"...), or null. */
+    /** Development (SmokeTest): what the stream does here, by Create's name ("splashing"...), or null. */
     @Nullable
     public String streamKind() {
         return kind == null ? null : kind.name().toLowerCase(Locale.ROOT);

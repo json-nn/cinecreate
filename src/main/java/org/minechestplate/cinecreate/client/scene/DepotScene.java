@@ -28,19 +28,17 @@ import org.minechestplate.cinecreate.client.FrameCounter;
 import org.minechestplate.cinecreate.station.SceneBlocks;
 
 /**
- * The depot. The player steps up and leans over it. The stack in hand is carried over the plate and set down flat; it
- * slides the last pixel with the depot's own slide sound. Touching what lies there lifts it by its edge back into the
- * hand, together with anything processing left on the depot. Underneath is the depot's bridge menu, so what fits and
- * how much of it is Create's. A machine working the depot makes the scene its own ({@link PressScene}).
+ * The depot (DESIGN §7.1): lay the held stack on the plate or take what lies there, through {@link DepotMenu}, so what
+ * fits is Create's decision. The base of every depot composite: a machine working the depot makes the scene its own.
  */
 public class DepotScene extends CineStation<DepotMenu> {
-    /** Setting a stack down: seconds, and the frame it touches the plate (the click). */
+    /** Setting a stack down: seconds, and the beat (the click, the frame it touches the plate). */
     static final double SET_DOWN = 0.55, SET_DOWN_BEAT = 0.38;
-    /** Taking it: seconds, and the frame the fingers close on it. */
+    /** Taking it: seconds, and the beat (the fingers close on it). */
     static final double TAKE = 0.45, TAKE_BEAT = 0.20;
     /** How far a held item hangs under the fist. */
     static final double HOLD = 0.07;
-    /** The fist over the plate: carrying, about to set down, at the moment it is set down, touching bare, at rest. */
+    /** The fist over the plate: carrying, lifted before setting down, setting down, touching bare, at rest. */
     static final double CARRY = 0.17, LIFT = 0.06, SET = 0.085, TOUCH = 0.075, BARE = 0.11;
     static final double HAND_Y = 0.062;
     /** A stack just set down is drawn by the scene until Create's own renderer has it (one sync), at most this long. */
@@ -48,14 +46,13 @@ public class DepotScene extends CineStation<DepotMenu> {
     /** Half the plate the cursor can touch. */
     static final double PLATE = 0.46;
 
-    /** Development only ({@code SmokeTest}): the plate counts as touched while the cursor is somewhere else. */
+    /** Development (SmokeTest): the plate counts as touched wherever the cursor is. */
     public static boolean smokePin;
 
     protected final Vec3 top;
-    /** Where a stack set down lies: just short of the middle on the player's side ({@link DepotMenu#SET_DOWN_AT}). */
-    protected final Vec3 spot;
-    private boolean hovered;
-    /** The move under way sets a stack down (else it takes one). */
+    /** Where a stack set down lies: short of the middle, where the server sets it ({@link DepotMenu#SET_DOWN_AT}). */
+    private final Vec3 setAt;
+    protected boolean hovered;
     private boolean setting;
     private ItemStack ghost = ItemStack.EMPTY;
     private double ghostAt = -10;
@@ -64,12 +61,27 @@ public class DepotScene extends CineStation<DepotMenu> {
     public DepotScene(BlockPos pos, Direction side) {
         super(pos, side, DepotMenu.class, 0);
         top = Vec3.atBottomCenterOf(pos).add(0, SceneBlocks.DEPOT_TOP, 0);
-        spot = top.add(side().scale(0.5 - DepotMenu.SET_DOWN_AT));
+        setAt = top.add(side().scale(0.5 - DepotMenu.SET_DOWN_AT));
     }
 
     @Override
     public Vec3 center() {
         return top;
+    }
+
+    @Override
+    public List<Component> spotNames() {
+        return List.of(Component.translatable("cinecreate.layout.spot.plate"));
+    }
+
+    @Override
+    public Vec3 spotBase(int spot) {
+        return setAt;
+    }
+
+    /** Where the hand lays a stack and takes it (the layout's plate spot). */
+    protected final Vec3 plate() {
+        return spot(0);
     }
 
     // ---- staging -------------------------------------------------------------------------------------
@@ -101,10 +113,7 @@ public class DepotScene extends CineStation<DepotMenu> {
         return 64;
     }
 
-    /**
-     * With a machine over the depot (a spout, a deployer): pulled back and a little lower, as the press scene stands,
-     * so its head is in the frame too.
-     */
+    /** With a machine over the depot: pulled back and a little lower, so the machine's head is in the frame too. */
     protected CameraRig.Pose machineLean() {
         Vec3 eye = top.add(side().scale(1.05)).add(0, 0.55, 0);
         Vec3 look = top.add(0, 0.45, 0).subtract(eye);
@@ -113,7 +122,6 @@ public class DepotScene extends CineStation<DepotMenu> {
         return new CameraRig.Pose(eye, yaw, pitch, -1.5f);
     }
 
-    /** What lies on the plate (the client's copy). */
     protected ItemStack lying() {
         return slot(DepotMenu.MAIN);
     }
@@ -123,7 +131,6 @@ public class DepotScene extends CineStation<DepotMenu> {
         return 45f;
     }
 
-    /** Hands on the near rim, either side of the plate. */
     @Override
     protected Vec3 restAt(boolean right) {
         return top.add(side().scale(0.34)).add(right().scale(right ? 0.3 : -0.3)).add(0, HAND_Y, 0);
@@ -137,7 +144,6 @@ public class DepotScene extends CineStation<DepotMenu> {
 
     // ---- interaction ---------------------------------------------------------------------------------
 
-    /** The depot has one place for a stack: the hand always goes there. */
     @Override
     public void updateCursor(boolean overPanel) {
         if (moving()) {
@@ -152,16 +158,18 @@ public class DepotScene extends CineStation<DepotMenu> {
         if (overPanel) {
             return;
         }
-        Vec3 hit = Picking.cursorOnPlane(top.y + 0.01);
-        if (hit != null && Math.abs(hit.x - top.x) <= PLATE && Math.abs(hit.z - top.z) <= PLATE) {
+        Vec3 middle = top.add(plate().subtract(setAt));
+        double half = PLATE * spotArea(0);
+        Vec3 hit = Picking.cursorOnPlane(middle.y + 0.01);
+        if (hit != null && Math.abs(hit.x - middle.x) <= half && Math.abs(hit.z - middle.z) <= half) {
             hover();
         }
     }
 
-    /** Development: touches the plate as the cursor would. */
+    /** Development (SmokeTest): touches the plate as the cursor would. */
     public void hover() {
         hovered = true;
-        aim = spot;
+        aim = plate();
     }
 
     /** The cursor leaving does not stop a move half way, nor take the hand off a pinned plate. */
@@ -180,13 +188,11 @@ public class DepotScene extends CineStation<DepotMenu> {
         if (t < 0) {
             lift = carrying ? CARRY : BARE;
         } else if (setting) {
-            // up a little, down onto the plate, let go, and away
             double high = CARRY + Anim.outCubic(Anim.window(t, 0, 0.2)) * LIFT;
             double down = Anim.inOutCubic(Anim.window(t, 0.2, SET_DOWN_BEAT));
             double away = Anim.outCubic(Anim.window(t, SET_DOWN_BEAT, SET_DOWN));
             lift = high + (SET - high) * down + (BARE - SET) * away;
         } else {
-            // down to the stack, the fingers close, and up with it
             double down = Anim.inOutCubic(Anim.window(t, 0, TAKE_BEAT - 0.02));
             double up = Anim.outCubic(Anim.window(t, TAKE_BEAT, TAKE));
             lift = BARE + (TOUCH - BARE) * down + (CARRY - TOUCH) * up;
@@ -199,7 +205,6 @@ public class DepotScene extends CineStation<DepotMenu> {
         return hand.add(0, -HOLD, 0);
     }
 
-    /** Held at a slant; laid flat as it goes down onto the plate. */
     @Override
     public float heldItemTilt() {
         double t = moveTime();
@@ -228,10 +233,9 @@ public class DepotScene extends CineStation<DepotMenu> {
         setting = true;
         startMove(SET_DOWN, SET_DOWN_BEAT, () -> {
             click(DepotMenu.MAIN, button, ClickType.PICKUP);
-            // the client's slot has it at once (the click is predicted); Create's depot once the server sends it
             ghost = slot(DepotMenu.MAIN).copy();
             ghostAt = Scene.clock();
-            Fx.motes(spot.add(0, 0.02, 0), 0.08, 6, 0.62f, 0.6f, 0.56f, 0.05);
+            Fx.motes(plate().add(0, 0.02, 0), 0.08, 6, 0.62f, 0.6f, 0.56f, 0.05);
         });
     }
 
@@ -260,7 +264,7 @@ public class DepotScene extends CineStation<DepotMenu> {
         return false;
     }
 
-    /** A click on the menu right now (the move's beat: {@code slotClick} waits for the move to end). */
+    /** A click on the menu at once: on the beat, {@code slotClick} would wait for the move to end. */
     private void click(int slot, int button, ClickType type) {
         Minecraft mc = Minecraft.getInstance();
         DepotMenu menu = menu();
@@ -271,7 +275,7 @@ public class DepotScene extends CineStation<DepotMenu> {
 
     @Override
     protected Vec3 restPoint(int slot) {
-        return spot;
+        return plate();
     }
 
     @Nullable
@@ -289,8 +293,8 @@ public class DepotScene extends CineStation<DepotMenu> {
     // ---- drawing -------------------------------------------------------------------------------------
 
     /**
-     * The stack just set down, until Create draws it: the client's slot already has it, Create's depot only once the
-     * server has sent it. (Cinematic Interactions calls this twice a frame for add-on stations; it draws once.)
+     * The stack just set down, until Create draws it: the client's slot has it at once (the click is predicted), Create's
+     * depot only once the server has sent it. CI calls this twice a frame for add-on stations: it draws once.
      */
     @Override
     public void renderScene(PoseStack pose, MultiBufferSource buffers, Camera camera, int light) {
@@ -309,7 +313,7 @@ public class DepotScene extends CineStation<DepotMenu> {
             ghost = ItemStack.EMPTY;
             return;
         }
-        ItemPlacer.render(pose, buffers, camera.getPosition(), ghost, spot, side, 31L, 1f, 0f, light);
+        ItemPlacer.render(pose, buffers, camera.getPosition(), ghost, plate(), side, 31L, spotSize(0), 0f, light);
     }
 
     /** A warm glow on the plate under the cursor; red when the depot will not take what is carried. */
@@ -321,7 +325,7 @@ public class DepotScene extends CineStation<DepotMenu> {
         ItemStack carried = menu() == null ? ItemStack.EMPTY : menu().getCarried();
         boolean ok = carried.isEmpty() ? holdsAnything() : accepts(DepotMenu.MAIN, carried);
         float p = (float) (0.45 + 0.15 * Math.sin(Scene.clock() * 4));
-        EnchantFx.disc(pose, buffers, camera, spot.add(0, 0.004, 0), 0.16, 0, EnchantFx.GLOW,
+        EnchantFx.disc(pose, buffers, camera, plate().add(0, 0.004, 0), 0.16, 0, EnchantFx.GLOW,
                 p, ok ? p * 0.75f : p * 0.2f, ok ? p * 0.45f : p * 0.2f);
     }
 }

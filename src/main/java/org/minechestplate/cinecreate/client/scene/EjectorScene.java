@@ -16,14 +16,12 @@ import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.client.ClientConfig;
 
 /**
- * The Weighted Ejector (DESIGN §7.12). The item is set on the plate as on a depot. When the plate snaps, the player
- * stays where they lean over it and only turns their head after the throw: the gaze follows the item along its arc,
- * rests on it where it lands, and comes back to the ejector. A neck turns only so far: a throw that goes behind the
- * player is followed as far as the head turns. Only when the "Watch launches" setting is on and the target is close
- * enough.
+ * The Weighted Ejector (DESIGN §7.12): the item is set on the plate as on a depot. After the plate snaps, the eyes stay
+ * where they lean and only the head turns, following the item to where it lands (as far as a neck turns) and back. Only
+ * with the "Watch launches" setting on and the target within {@link #WATCH_REACH} blocks.
  */
 public class EjectorScene extends DepotScene {
-    /** The snap of the plate. */
+    /** The snap of the plate: kick, and how long it fades (seconds). */
     static final double KICK = 0.40, KICK_TIME = 0.35;
     /** Watching: the eyes catching up with the item, the rest where it lands, the look back to the ejector (seconds). */
     static final double CATCH = 0.25, REST = 0.4, BACK = 0.6;
@@ -31,10 +29,9 @@ public class EjectorScene extends DepotScene {
     static final float TURN = 110, UP = 70, DOWN = 60;
     /** A far landing is watched a little narrower (degrees off the field of view at {@link #FAR} blocks and beyond). */
     static final double SQUINT = 12, FAR = 16;
-    /** Targets farther than this are not watched. */
     static final int WATCH_REACH = 32;
 
-    /** Development: launches seen, launches watched (the eyes reached the landing), how far the head turned (degrees). */
+    /** Development (SmokeTest): launches seen, watched to the landing, and the largest head turn (degrees). */
     public int launches, watched;
     public float turnedMost;
 
@@ -54,7 +51,6 @@ public class EjectorScene extends DepotScene {
         return mc.level != null && mc.level.getBlockEntity(pos) instanceof EjectorBlockEntity ejector ? ejector : null;
     }
 
-    /** The way the ejector throws. */
     private Direction facing() {
         Minecraft mc = Minecraft.getInstance();
         BlockState state = mc.level == null ? null : mc.level.getBlockState(pos);
@@ -100,7 +96,7 @@ public class EjectorScene extends DepotScene {
 
     // ---- the launch ----------------------------------------------------------------------------------
 
-    /** Client tick: the plate snapping (Create's state leaving charged) starts the watch. */
+    /** The plate snapping (Create's state leaving CHARGED) starts the watch. */
     @Override
     public void tick() {
         super.tick();
@@ -130,10 +126,6 @@ public class EjectorScene extends DepotScene {
         return t >= 0 && t < KICK_TIME ? KICK * (1 - t / KICK_TIME) : 0;
     }
 
-    /**
-     * The depot's lean, the head turned toward the item while a launch is watched: the eyes stay where they are, only
-     * the look turns, as far as a neck turns.
-     */
     @Override
     public CameraRig.Pose lean() {
         CameraRig.Pose home = super.lean();
@@ -156,7 +148,6 @@ public class EjectorScene extends DepotScene {
                 (float) (home.roll() * (1 - k)));
     }
 
-    /** A far landing is watched narrower, as if squinting after it. */
     @Override
     public double leanFov() {
         double t = watching();
@@ -173,7 +164,7 @@ public class EjectorScene extends DepotScene {
         return Component.translatable("cinecreate.hint.weighted_ejector");
     }
 
-    /** Development: whether a launch is being watched right now. */
+    /** Development (SmokeTest): whether a launch is being watched right now. */
     public boolean watchingNow() {
         return watching() >= 0;
     }

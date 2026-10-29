@@ -31,27 +31,22 @@ import net.minecraft.world.level.Level;
 import org.minechestplate.cinecreate.registry.CineMenus;
 
 /**
- * A Mechanical Saw facing up: slot 0 is what lies on its table (in through the saw's own inventory, as an item dropped on
- * it gets in). The shapes it can be cut into are {@link #shapes}: Create's cutting recipes for it (and stonecutting,
- * when the server allows that on the saw), by result, in a fixed order on both sides; with the table empty, the shapes
- * of what the hand carries, so one can be chosen before it is laid down. Button {@code SHAPE + i} sets the
- * saw's filter to shape i, as its filter slot would; {@link #ANY_SHAPE} clears it; {@link #TAKE_ALL} is Create's own
- * empty-handed click (everything on the table into the inventory).
+ * A Mechanical Saw facing up: slot 0 is what lies on its table (in through the saw's own inventory, as an item dropped
+ * on it). Button {@code SHAPE + i} sets the saw's filter to shape i of {@link #shapes}, as its filter slot would;
+ * {@link #ANY_SHAPE} clears it; {@link #TAKE_ALL} is Create's own empty-handed click.
  */
 public class SawMenu extends BridgeMenu {
     public static final int TABLE = 0;
     public static final int TAKE_ALL = 0, ANY_SHAPE = 1, SHAPE = 2;
-    /** At most this many shapes on the dial. */
-    public static final int MAX_SHAPES = 9;
+    /** At most this many shapes (a safety cap for the button ids: the dial turns through every one, see SawScene). */
+    public static final int MAX_SHAPES = 64;
 
-    /** Server: the slot over the saw's table. */
     private SawMenu(int id, Inventory inventory, BlockPos pos, SawBlockEntity saw) {
         super(CineMenus.SAW.get(), id, inventory, pos, 1, 1);
         addSlot(new TableSlot(saw));
         addPlayerInventory(inventory, 8, 84);
     }
 
-    /** Client: a plain copy the server keeps in sync. */
     private SawMenu(int id, Inventory inventory, BlockPos pos) {
         super(CineMenus.SAW.get(), id, inventory, pos, 1, 1);
         Level level = inventory.player.level();
@@ -91,8 +86,8 @@ public class SawMenu extends BridgeMenu {
     }
 
     /**
-     * What this input can be cut into on the saw: the results of Create's cutting recipes for it, and of stonecutting
-     * ones when the server lets the saw do those, each once, ordered by the item's id (the same on both sides).
+     * What this input can be cut into on the saw: Create's cutting recipes, and stonecutting when the server allows it on
+     * the saw, each result once, ordered by item id so both sides number them alike.
      */
     public static List<ItemStack> shapes(Level level, ItemStack input) {
         List<ItemStack> shapes = new ArrayList<>();
@@ -130,7 +125,6 @@ public class SawMenu extends BridgeMenu {
         return (List) level.getRecipeManager().getAllRecipesFor((RecipeType) type);
     }
 
-    /** Server: a shape for the filter, no filter, or Create's empty-handed click. */
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (!(player instanceof ServerPlayer server) || !(player.level().getBlockEntity(pos) instanceof SawBlockEntity saw) || !player.mayBuild()) {
@@ -157,7 +151,6 @@ public class SawMenu extends BridgeMenu {
         return true;
     }
 
-    /** Server: what lies on the saw's table, in and out through the saw's own inventory. */
     private static final class TableSlot extends Slot {
         private final SawBlockEntity saw;
 

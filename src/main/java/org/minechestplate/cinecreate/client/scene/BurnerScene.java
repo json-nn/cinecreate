@@ -30,15 +30,13 @@ import org.minechestplate.cinecreate.bridge.BurnerMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
 
 /**
- * The Blaze Burner (DESIGN §7.7). Crouched at the burner, the player holds the fuel out to the blaze; it is tossed
- * through the cage and eaten (Create's munch). Coal, logs and the like kindle it; a Blaze Cake makes it seethe: a blue
- * flash and a gust of heat that shimmers the view. An empty burner is lit with flint and steel, struck twice at the
- * cage. What the blaze will not eat is refused, and the hint says so.
+ * The Blaze Burner (DESIGN §7.7): crouched at the cage, the player tosses fuel to the blaze (a Blaze Cake makes it
+ * seethe); an empty burner is lit with flint and steel, struck twice.
  */
 public class BurnerScene extends CineStation<BurnerMenu> {
-    /** Feeding: seconds, the wind-up (the hand draws back), the beat (it lands in the blaze), the arc's rise. */
+    /** Feeding: seconds, the wind-up, the beat (it lands in the blaze), the arc's rise, how far the hand draws back. */
     static final double TOSS = 0.6, WIND_UP = 0.15, TOSS_BEAT = 0.40, ARC = 0.12, DRAW_BACK = 0.08;
-    /** Lighting: the first strike, the second one later (the beat), and the whole move. */
+    /** Lighting: the first strike (only seen), the second one later (the beat), and the whole move. */
     static final double FIRST_STRIKE = 0.15, STRIKE_GAP = 0.25, STRIKE = 0.6;
     /** The blaze's height in its cage; how far the camera stands back, and how high. */
     static final double BLAZE = 0.45, CAMERA_BACK = 1.05, CAMERA_UP = 0.6;
@@ -46,15 +44,13 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     static final double FEED_FLASH = 0.04, CAKE_FLASH = 0.12, CAKE_KICK = 0.30, FLASH_DECAY = 8, KICK_DECAY = 10;
     static final double SHIMMER = 0.5, SHIMMER_HZ = 6, SHIMMER_TIME = 0.8;
     static final int ORANGE = 0xFF9A3A, CAKE_BLUE = 0x9BD8FF;
-    /** How long the "won't eat that" hint stays after a refusal. */
     static final double REFUSED_HINT = 2.0;
 
-    /** Development only ({@code SmokeTest}): the cage counts as pointed at while the cursor is somewhere else. */
+    /** Development (SmokeTest): the cage counts as pointed at wherever the cursor is. */
     public static boolean smokePin;
-    /** Development: meals, cakes among them, strikes that lit it, refusals. */
+    /** Development (SmokeTest): meals (cakes among them), cakes, strikes that lit it, refusals. */
     public int feeds, cakes, strikes, denials;
 
-    /** The bottom of the block, and the blaze in its cage. */
     private final Vec3 base, blaze;
     private boolean hovered;
     /** The move under way: striking flint and steel (else tossing fuel), a cake, the last of the stack. */
@@ -80,6 +76,21 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     }
 
     @Override
+    public List<Component> spotNames() {
+        return List.of(Component.translatable("cinecreate.layout.spot.cage"));
+    }
+
+    @Override
+    public Vec3 spotBase(int spot) {
+        return blaze.add(side().scale(0.5));
+    }
+
+    /** Where the hand feeds through the cage (the layout's cage spot). */
+    private Vec3 cage() {
+        return spot(0);
+    }
+
+    @Override
     public boolean crouches() {
         return true;
     }
@@ -102,7 +113,6 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         return walk ? List.of(stand) : List.of();
     }
 
-    /** Crouched in front of the cage, looking at the blaze; a cake's heat shimmers the view for a moment. */
     @Override
     public CameraRig.Pose lean() {
         Vec3 eye = base.add(side().scale(CAMERA_BACK)).add(0, CAMERA_UP, 0);
@@ -125,7 +135,6 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         return 30f;
     }
 
-    /** Hands at the cage's front corners. */
     @Override
     protected Vec3 restAt(boolean right) {
         return blaze.add(side().scale(0.32)).add(right().scale(right ? 0.36 : -0.36)).add(0, -0.05, 0);
@@ -133,7 +142,6 @@ public class BurnerScene extends CineStation<BurnerMenu> {
 
     // ---- interaction ---------------------------------------------------------------------------------
 
-    /** The cage has one front to the player: the cursor on it points the hand there. */
     @Override
     public void updateCursor(boolean overPanel) {
         if (moving()) {
@@ -148,17 +156,18 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         if (overPanel) {
             return;
         }
-        Vec3 front = base.add(side().scale(0.5));
+        Vec3 front = base.add(side().scale(0.5)).add(cage().subtract(spotBase(0)));
+        double half = 0.5 * spotArea(0);
         Vec3 hit = Picking.cursorOnPlane(front, side());
-        if (hit != null && Math.abs(hit.subtract(front).dot(right())) <= 0.5 && hit.y >= base.y && hit.y <= base.y + 1) {
+        if (hit != null && Math.abs(hit.subtract(front).dot(right())) <= half && Math.abs(hit.y - front.y - 0.5) <= half) {
             hover();
         }
     }
 
-    /** Development: points at the cage as the cursor would. */
+    /** Development (SmokeTest): points at the cage as the cursor would. */
     public void hover() {
         hovered = true;
-        aim = blaze.add(side().scale(0.5));
+        aim = cage();
     }
 
     @Override
@@ -169,7 +178,6 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         }
     }
 
-    /** The hand holds the fuel out before the cage, draws back and flicks it in; flint and steel is struck twice. */
     @Override
     protected Vec3 reach(Vec3 target, Vec3 shoulder, boolean carrying, double tap) {
         // протянута к решётке, не к камере
@@ -194,7 +202,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         return ready.add(side().scale(DRAW_BACK * back - 0.1 * flick));
     }
 
-    /** Held out toward the cage; the last of a stack flies itself (with more in hand, the scene draws the one flying). */
+    /** The last of a stack flies itself; with more in hand, renderScene draws the one flying. */
     @Override
     protected Vec3 carry(Vec3 hand, Vec3 shoulder) {
         Vec3 held = hand.add(side().scale(-0.05)).add(0, -0.05, 0);
@@ -209,17 +217,13 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         return lastOne && t < TOSS_BEAT ? flight(t) : held;
     }
 
-    /** A tossed piece of fuel: from the hand into the blaze along a short arc. */
     private Vec3 flight(double t) {
         Vec3 from = releaseFrom != null ? releaseFrom : blaze;
         double k = Anim.window(t, WIND_UP, TOSS_BEAT);
         return Anim.lerp(from, blaze, k).add(0, ARC * Anim.hump(k), 0);
     }
 
-    /**
-     * Fuel the blaze will eat (Create's own test, tried without doing it) is tossed in; flint and steel lights an empty
-     * burner; anything else is refused.
-     */
+    /** Fuel goes in only if Create's own test (simulated) takes it; flint and steel lights an empty burner. */
     @Override
     protected void act(int button, boolean shift) {
         Minecraft mc = Minecraft.getInstance();
@@ -282,7 +286,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     }
 
     private void sparks() {
-        Fx.hotSparks(blaze.add(side().scale(0.45)), side().scale(-1).add(0, 0.5, 0), 0.6, 10, 1.6);
+        Fx.hotSparks(cage().subtract(side().scale(0.05)), side().scale(-1).add(0, 0.5, 0), 0.6, 10, 1.6);
     }
 
     /** Create's click with what the hand carries, on the side the player works from. */
@@ -294,11 +298,11 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         }
     }
 
-    /** The blaze has it: the hand lets go of one at once (the server's answer, a bucket back from lava, comes after). */
+    /** The hand lets go of one at once; the server's answer (a bucket back from lava) comes after. */
     private void eatenUp() {
         Minecraft mc = Minecraft.getInstance();
         BurnerMenu menu = menu();
-        if (menu != null && mc.player != null && !mc.player.isCreative()) {
+        if (menu != null && mc.player != null && !mc.player.isCreative() && !AllItems.CREATIVE_BLAZE_CAKE.isIn(menu.getCarried())) {
             ItemStack carried = menu.getCarried().copy();
             carried.shrink(1);
             menu.setCarried(carried);
@@ -311,7 +315,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         deny();
     }
 
-    /** Once a frame: the first strike of flint and steel (the second is the beat). */
+    /** The first strike of flint and steel is only seen and heard; the second is the move's beat. */
     @Override
     public void beforeFrame() {
         super.beforeFrame();
@@ -365,7 +369,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
 
     // ---- drawing -------------------------------------------------------------------------------------
 
-    /** The piece of fuel in the air while more of the stack stays in hand. Drawn once a frame. */
+    /** The fuel in the air while more of the stack stays in hand; drawn once a frame (CI calls this twice). */
     @Override
     public void renderScene(PoseStack pose, MultiBufferSource buffers, Camera camera, int light) {
         long frame = FrameCounter.frame();
@@ -375,12 +379,11 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         drawnFrame = frame;
         double t = moveTime();
         if (!striking && !lastOne && !Grip.inHand() && t >= WIND_UP && t < TOSS_BEAT && !flying.isEmpty()) {
-            ItemPlacer.renderOne(pose, buffers, camera.getPosition(), flying, flight(t), side, 77L, 1f,
+            ItemPlacer.renderOne(pose, buffers, camera.getPosition(), flying, flight(t), side, 77L, spotSize(0),
                     (float) (18 + 360 * Anim.window(t, WIND_UP, TOSS_BEAT)), light);
         }
     }
 
-    /** The cage glows warm under the cursor when the blaze will take what is carried, red when it will not. */
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         BurnerMenu menu = menu();
@@ -394,7 +397,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
                 ? carried.getItem() instanceof FlintAndSteelItem
                 : BlazeBurnerBlock.tryInsert(state, mc.level, pos, carried.copy(), true, true, true).getResult() == InteractionResult.SUCCESS);
         float p = (float) (0.2 + 0.06 * Math.sin(Scene.clock() * 5));
-        Fx.facePatch(pose, buffers, camera, blaze.add(side().scale(0.51)), right(), new Vec3(0, 1, 0), 0.3,
+        Fx.facePatch(pose, buffers, camera, cage().add(side().scale(0.01)), right(), new Vec3(0, 1, 0), 0.3,
                 p, ok ? p * 0.7f : p * 0.25f, ok ? p * 0.4f : p * 0.2f);
     }
 }

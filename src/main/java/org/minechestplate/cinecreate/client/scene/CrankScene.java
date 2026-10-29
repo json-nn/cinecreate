@@ -22,20 +22,18 @@ import org.lwjgl.glfw.GLFW;
 import org.minechestplate.cinecreate.bridge.CrankMenu;
 
 /**
- * The Hand Crank (DESIGN §7.5). Both hands on the grip, one behind the other. Holding the left button cranks: the
- * hands ride the grip round with Create's own drawn handle, the camera bobs gently with each turn, and the player
- * tires (Create's hunger cost). Letting go lets the crank coast to a stop, the hands still on it. The right button
- * cranks the other way.
+ * The Hand Crank (DESIGN §7.5). Holding the left button cranks, the right one cranks back: both hands ride the handle
+ * as Create draws it, the camera bobs with each turn, and Create's hunger cost tires the player.
  */
 public class CrankScene extends CineStation<CrankMenu> {
     /**
-     * The handle's grip in Create's model, from the crank's centre: 7 px out from the axis, reaching from 1 px behind
-     * the centre to 5 px in front. The right fist holds its outer end, the left one the inner end, by the arm.
+     * The handle's grip in Create's model, from the crank's centre: 7 px out from the axis, from 1 px behind the centre
+     * to 5 px in front. The right fist holds its outer end, the left one the inner end.
      */
     static final float GRIP_OUT = 7 / 16f, RIGHT_FIST = 3.5f / 16, LEFT_FIST = 0.5f / 16;
     /**
-     * How far the camera stands from the crank (a wall crank: in front and a little above) and how wide it sees: the
-     * handle is a block long, but CI's arms hang from the camera, and from farther back they reach out like poles.
+     * The camera's distance from the crank (a wall crank: in front, a little above) and its FOV: CI's arms hang from the
+     * camera, and from farther back they reach out like poles.
      */
     static final double CAMERA = 1.0, CAMERA_UP = 0.3, FOV = 70;
     /** At full speed the camera bobs this much with each turn and rolls this many degrees; more when tired. */
@@ -45,17 +43,16 @@ public class CrankScene extends CineStation<CrankMenu> {
     /** Create's crank at full speed, in degrees per tick. */
     static final double FULL_SPEED = CrankMenu.RPM * 360 / 60.0 / 20.0;
 
-    /** Development: turns sent. */
+    /** Development (SmokeTest): turns sent. */
     public int turns;
-    /** Development only ({@code SmokeTest}): marks where the scene puts the grip, to compare with Create's drawn handle. */
+    /** Development (SmokeTest): marks the scene's grip point, to compare with Create's drawn handle. */
     public static boolean smokeMarks;
 
     private final Direction facing;
     private final Vec3 hub;
-    /** Create's handle model turned to face the crank's way, and the positive direction of its axis. */
     private final Quaternionf model;
     private final Vector3f axis;
-    /** The button held (0 cranks on, 1 back; -1: none), held by the smoke test rather than the mouse, ticks since a turn. */
+    /** The button held (0 cranks on, 1 back, -1 none); heldByCode: held by SmokeTest, not the mouse. */
     private int held = -1;
     private boolean heldByCode;
     private int sinceTurn;
@@ -105,7 +102,6 @@ public class CrankScene extends CineStation<CrankMenu> {
         return facing == Direction.UP;
     }
 
-    /** In front of the crank, a little above it (looking down onto one on the floor, up at one on a ceiling); it bobs with each turn. */
     @Override
     public CameraRig.Pose lean() {
         Vec3 eye = switch (facing) {
@@ -140,13 +136,12 @@ public class CrankScene extends CineStation<CrankMenu> {
         return false;
     }
 
-    /** Both hands on the grip: the right at its outer end, the left behind it, by the arm. */
     @Override
     protected Vec3[] bothHands() {
         return new Vec3[] {grip(RIGHT_FIST), grip(LEFT_FIST)};
     }
 
-    /** The hands hold on: they follow the knob closely, not lazily like hands at rest. */
+    /** The hands hold on: they follow the knob closely, not lazily like resting hands. */
     @Override
     public double handsStiffness() {
         return 60;
@@ -158,8 +153,8 @@ public class CrankScene extends CineStation<CrankMenu> {
     }
 
     /**
-     * A point on the grip of Create's handle, this far in front of the crank's centre, turned as Create's visual turns
-     * the handle: the model turned to face the crank's way, then about the axis's positive direction by the drawn angle.
+     * A point on the grip, this far in front of the crank's centre, turned as Create's visual turns the handle: the model
+     * faced the crank's way, then turned about the axis's positive direction by the drawn angle.
      */
     private Vec3 grip(float front) {
         Vector3f at = new Vector3f(-GRIP_OUT, 0, -front);
@@ -205,7 +200,6 @@ public class CrankScene extends CineStation<CrankMenu> {
 
     // ---- cranking ------------------------------------------------------------------------------------
 
-    /** A press starts cranking (left on, right back); it goes on while the button stays down. */
     @Override
     public void click(int button, boolean shift) {
         if (menu() == null || button != 0 && button != 1) {
@@ -223,7 +217,7 @@ public class CrankScene extends CineStation<CrankMenu> {
         }
     }
 
-    /** Development ({@code SmokeTest}): holds a button down as the mouse would, or lets go (-1). */
+    /** Development (SmokeTest): holds a button down as the mouse would, or lets go (-1). */
     public void hold(int button) {
         held = button;
         heldByCode = button >= 0;
@@ -232,7 +226,7 @@ public class CrankScene extends CineStation<CrankMenu> {
         }
     }
 
-    /** Client tick: while the button is held, a turn as often as holding Create's use repeats. */
+    /** While the button is held, a turn as often as holding Create's use repeats. */
     @Override
     public void tick() {
         super.tick();
@@ -250,8 +244,8 @@ public class CrankScene extends CineStation<CrankMenu> {
     }
 
     /**
-     * One turn: the button to the server, and the same turn on the client's crank right away, as Create's own click
-     * does on both sides (the client's crank then plays Create's cranking sound).
+     * One turn: the button to the server, and the same turn on the client's crank at once, as Create's own click does on
+     * both sides (the client's crank then plays Create's cranking sound).
      */
     private void turn() {
         sinceTurn = 0;
@@ -272,7 +266,6 @@ public class CrankScene extends CineStation<CrankMenu> {
         return GLFW.glfwGetMouseButton(window, button == 0 ? GLFW.GLFW_MOUSE_BUTTON_LEFT : GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
     }
 
-    /** Once a frame: the handle's angle and speed as Create draws them this frame. */
     @Override
     public void beforeFrame() {
         super.beforeFrame();

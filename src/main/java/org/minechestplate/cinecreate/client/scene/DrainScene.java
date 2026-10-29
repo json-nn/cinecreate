@@ -25,24 +25,23 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import org.minechestplate.cinecreate.bridge.DrainMenu;
 
 /**
- * The Item Drain (DESIGN §7.13). The filled container is laid on the far side of the grate; Create rolls it to the
- * middle and drains it, and the liquid spirals down into the grate in its colour. Then it rolls on toward the player and
- * off the edge, where the hand catches it. An empty hand takes back what lies there. (Create's drain gives its liquid to
- * pipes only: an empty bucket is laid down and rolls through like anything else.)
+ * The Item Drain (DESIGN §7.13). A filled container is laid on the far side of the grate; Create rolls it to the middle,
+ * drains it and rolls it off the near edge, where the hand catches it. Create's drain gives its liquid to pipes only: an
+ * empty bucket rolls through like anything else.
  */
 public class DrainScene extends CineStation<DrainMenu> {
     /** The grate (what lies on it is drawn this high); where a container is laid, on the far side. */
     static final double GRATE = 15 / 16.0, LAY_AT = 0.25;
     /** Laying down: seconds, the beat. Taking back: seconds, the beat. */
     static final double LAY = 0.55, LAY_BEAT = 0.38, TAKE = 0.45, TAKE_BEAT = 0.22;
-    /** The fist over the grate: carrying, bare; reaching for the near edge to catch. */
+    /** The fist over the grate: carrying, bare; the resting hands on the rim. */
     static final double CARRY = 0.17, BARE = 0.11, HAND_Y = 0.062;
     /** How long the catching hand waits at the near edge after the container has gone. */
     static final double CATCH = 0.5;
 
-    /** Development only ({@code SmokeTest}): the grate counts as pointed at while the cursor is somewhere else. */
+    /** Development (SmokeTest): the grate counts as pointed at wherever the cursor is. */
     public static boolean smokePin;
-    /** Development: containers laid down, drained (seen spiralling), caught. */
+    /** Development (SmokeTest): containers laid down, drained, caught. */
     public int laid, drained, caught;
 
     private final Vec3 top;
@@ -51,10 +50,12 @@ public class DrainScene extends CineStation<DrainMenu> {
     private enum Move { LAY, TAKE }
 
     private Move move = Move.LAY;
-    /** What lay on the grate last tick, and whether it was being drained; when the catching hand reached out. */
     private ItemStack lastLying = ItemStack.EMPTY;
     private boolean draining;
     private double caughtAt = -10;
+    /** When the hand last took from the grate: Create's sync of that comes later, and is not a catch. */
+    private double tookAt = -10;
+    static final double TOOK_SYNC = 1.0;
 
     public DrainScene(BlockPos pos, Direction side) {
         super(pos, side, DrainMenu.class, 1);
@@ -66,6 +67,16 @@ public class DrainScene extends CineStation<DrainMenu> {
     @Override
     public Vec3 center() {
         return top;
+    }
+
+    @Override
+    public List<Component> spotNames() {
+        return List.of(Component.translatable("cinecreate.layout.spot.grate"));
+    }
+
+    @Override
+    public Vec3 spotBase(int spot) {
+        return top.add(side().scale(-LAY_AT));
     }
 
     @Override
@@ -81,7 +92,6 @@ public class DrainScene extends CineStation<DrainMenu> {
         return true;
     }
 
-    /** Leaning over the grate, as at the depot. */
     @Override
     public CameraRig.Pose lean() {
         Vec3 eye = top.add(side().scale(0.72)).add(0, 0.62, 0);
@@ -101,7 +111,7 @@ public class DrainScene extends CineStation<DrainMenu> {
         return 45f;
     }
 
-    /** Hands on the near rim; the right one reaches for the near edge while a drained container rolls off. */
+    /** Hands on the near rim; the right one reaches for the near edge when a drained container rolls off. */
     @Override
     protected Vec3 restAt(boolean right) {
         Vec3 rim = top.add(side().scale(0.34)).add(right().scale(right ? 0.3 : -0.3)).add(0, HAND_Y, 0);
@@ -125,13 +135,15 @@ public class DrainScene extends CineStation<DrainMenu> {
         if (overPanel) {
             return;
         }
-        Vec3 hit = Picking.cursorOnPlane(top.y);
-        if (hit != null && Math.abs(hit.x - top.x) <= 0.46 && Math.abs(hit.z - top.z) <= 0.46) {
+        Vec3 middle = top.add(layAt().subtract(spotBase(0)));
+        double half = 0.46 * spotArea(0);
+        Vec3 hit = Picking.cursorOnPlane(middle.y);
+        if (hit != null && Math.abs(hit.x - middle.x) <= half && Math.abs(hit.z - middle.z) <= half) {
             hover();
         }
     }
 
-    /** Development: points at the grate as the cursor would. */
+    /** Development (SmokeTest): points at the grate as the cursor would. */
     public void hover() {
         hovered = true;
         aim = layAt();
@@ -145,9 +157,9 @@ public class DrainScene extends CineStation<DrainMenu> {
         }
     }
 
-    /** On the far side of the grate, where a container laid down goes in. */
+    /** Where a container is laid (the layout's grate spot). */
     private Vec3 layAt() {
-        return top.add(side().scale(-LAY_AT));
+        return spot(0);
     }
 
     @Override
@@ -173,10 +185,7 @@ public class DrainScene extends CineStation<DrainMenu> {
         return hand.add(0, -0.07, 0);
     }
 
-    /**
-     * Something in hand is laid on the grate (a filled container one at a time, as the drain takes them). An empty hand
-     * takes back what lies there.
-     */
+    /** Lays what is carried (one container at a time, as the drain takes them); an empty hand takes back. */
     @Override
     protected void act(int button, boolean shift) {
         Minecraft mc = Minecraft.getInstance();
@@ -187,7 +196,10 @@ public class DrainScene extends CineStation<DrainMenu> {
         ItemStack carried = menu.getCarried();
         if (carried.isEmpty()) {
             if (!slot(DrainMenu.MAIN).isEmpty()) {
-                move(Move.TAKE, () -> click(shift ? ClickType.QUICK_MOVE : ClickType.PICKUP));
+                move(Move.TAKE, () -> {
+                    tookAt = Scene.clock();
+                    click(shift ? ClickType.QUICK_MOVE : ClickType.PICKUP);
+                });
             }
             return;
         }
@@ -227,10 +239,7 @@ public class DrainScene extends CineStation<DrainMenu> {
 
     // ---- the drain at work ---------------------------------------------------------------------------
 
-    /**
-     * Client tick: a filled container in the middle of the grate is being drained (the liquid spirals into the grate in
-     * its colour); one that rolls off the near edge is caught.
-     */
+    /** A filled container on the grate is drained (the liquid spirals in, in its colour); one rolling off is caught. */
     @Override
     public void tick() {
         super.tick();
@@ -254,7 +263,7 @@ public class DrainScene extends CineStation<DrainMenu> {
         if (draining && !full && !now.isEmpty()) {
             drained++;
         }
-        if (!lastLying.isEmpty() && now.isEmpty() && moveTime() < 0) {
+        if (!lastLying.isEmpty() && now.isEmpty() && moveTime() < 0 && Scene.clock() - tookAt > TOOK_SYNC) {
             caught++;
             caughtAt = Scene.clock();
             Fx.motes(top.add(side().scale(0.45)), 0.08, 6, 0.85f, 0.85f, 0.85f, 0.08);
@@ -267,7 +276,6 @@ public class DrainScene extends CineStation<DrainMenu> {
     public void renderScene(PoseStack pose, MultiBufferSource buffers, Camera camera, int light) {
     }
 
-    /** A warm glow where the container goes; red when the drain will not take what is carried. */
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         DrainMenu menu = menu();

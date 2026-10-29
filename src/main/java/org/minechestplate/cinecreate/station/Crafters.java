@@ -35,7 +35,6 @@ public final class Crafters {
         }
     }
 
-    /** The crafter's phase by name ({@link #IDLE}, {@link #CRAFTING}...), or null when it cannot be read. */
     @Nullable
     public static String phase(MechanicalCrafterBlockEntity crafter) {
         try {
@@ -45,7 +44,7 @@ public final class Crafters {
         }
     }
 
-    /** Idle: takes items, and a click works its window. Unknown counts as idle, as Create's own click would act too. */
+    /** Idle: takes items, and a click works its window. Unknown counts as idle (Create's own click would act too). */
     public static boolean idle(MechanicalCrafterBlockEntity crafter) {
         String phase = phase(crafter);
         return phase == null || IDLE.equals(phase);
@@ -74,12 +73,11 @@ public final class Crafters {
         return AllItems.CRAFTER_SLOT_COVER.isIn(stack);
     }
 
-    /** Whether this item would go into the window now: Create's own insertion, tried without doing it. */
+    /** Whether this item would go into the window now (Create's own insertion, simulated). */
     public static boolean takes(MechanicalCrafterBlockEntity crafter, ItemStack stack) {
         return !stack.isEmpty() && !isCover(stack) && crafter.getInventory().insertItem(0, stack.copyWithCount(1), true).isEmpty();
     }
 
-    /** Whether a Slot Cover would go on now: idle, empty, not covered yet. */
     public static boolean coverable(MechanicalCrafterBlockEntity crafter) {
         return idle(crafter) && !covered(crafter) && held(crafter).isEmpty();
     }

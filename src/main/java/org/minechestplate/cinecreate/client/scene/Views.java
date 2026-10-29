@@ -13,23 +13,21 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import org.minechestplate.cinecreate.client.Notices;
+import org.minechestplate.cinecreate.client.CiNotice;
 
 /**
- * Where a scene may put the player and its camera (DESIGN §8.4): never into blocks. A scene whose camera stands away
- * from the player's head (the crafters' framing, the basin's look over its rim) must be reachable from the player's own
- * eyes, or the view would pass through a wall. And when the place a scene would walk the player to is taken by blocks,
- * the refusal card says which.
+ * Where a scene may put the player and its camera (DESIGN §8.4): never into blocks. When a block is in the way, the
+ * refusal card names it.
  */
 final class Views {
     private Views() {}
 
-    /** Eye heights above the feet, standing and crouching (as Cinematic Interactions has them). */
+    /** Eye heights above the feet, standing and crouching (as CI has them). */
     static final double EYE = 1.62, CROUCHED_EYE = 1.27;
 
     /**
-     * Whether the scene's view can be reached from the player's eyes, standing at these feet, without passing through a
-     * block (the scene's own blocks excepted). When not, the reason is noted for the refusal card.
+     * Whether the scene's view is reachable from the player's eyes at these feet without passing through a block other
+     * than the scene's own: a camera away from the head (crafters, basin) would otherwise look through a wall.
      */
     static boolean reachable(ClientStation station, Vec3 feet, Set<BlockPos> own) {
         Minecraft mc = Minecraft.getInstance();
@@ -46,7 +44,7 @@ final class Views {
                 return true;
             }
             if (!own.contains(hit.getBlockPos())) {
-                Notices.why(station.pos, Component.translatable("cinecreate.notice.view_blocked",
+                CiNotice.why(station.pos, Component.translatable("cinecreate.notice.view_blocked",
                         level.getBlockState(hit.getBlockPos()).getBlock().getName()));
                 return false;
             }
@@ -76,15 +74,12 @@ final class Views {
         return null;
     }
 
-    /**
-     * The place the scene walks the player to: if blocks take it (where the body would be), the refusal card will say
-     * which, should Cinematic Interactions find no other place to stand.
-     */
+    /** Notes the block taking the stand spot for the refusal card (shown only if CI finds no other place to stand). */
     static void noteStand(ClientStation station, Vec3 feet) {
         BlockPos taken = taken(feet);
         Minecraft mc = Minecraft.getInstance();
         if (taken != null && mc.level != null) {
-            Notices.why(station.pos, Component.translatable("cinecreate.notice.stand_blocked",
+            CiNotice.why(station.pos, Component.translatable("cinecreate.notice.stand_blocked",
                     mc.level.getBlockState(taken).getBlock().getName()));
         }
     }

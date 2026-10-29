@@ -23,7 +23,6 @@ public abstract class BridgeMenu extends AbstractContainerMenu {
 
     protected final BlockPos pos;
     private final Block block;
-    /** Slots of the block, before the player's inventory. */
     protected final int machineSlots;
     /** The first slots that take items in; the others only give out (outputs). */
     protected final int inputSlots;

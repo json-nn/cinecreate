@@ -48,14 +48,12 @@ public final class SceneBlocks {
             DepotMenu::provider,
             (player, state, pos) -> Bridge.useOn(player, state, topHit(pos, DEPOT_TOP)),
             List.of(SceneKinds.DEPOT, SceneKinds.PRESSING, SceneKinds.SPOUTING, SceneKinds.DEPLOYING, SceneKinds.FAN),
-            // машина над депо (или поток вентилятора через него) делает сцену своей, и начинается она по-своему
             SceneBlocks::depotKind,
             stack -> false);
 
     /** The copper Valve Handle and its 16 dyed copies: one station each (CI takes one block per definition). */
     public static final List<SceneBlock> VALVES = valves();
 
-    /** The Hand Crank: turned by hand in the scene, through Create's own turn. */
     public static final SceneBlock CRANK = new SceneBlock(CineCreate.id("hand_crank"), create("hand_crank"), CrankMenu.class,
             SceneBlocks::frontOrAnySide,
             (state, face) -> true,
@@ -65,7 +63,6 @@ public final class SceneBlocks {
             (level, pos) -> SceneKinds.CRANK,
             stack -> false);
 
-    /** The Basin: things dropped in, fluids poured, and the watch when a mixer or a press above works it. */
     public static final SceneBlock BASIN = new SceneBlock(CineCreate.id("basin"), create("basin"), BasinMenu.class,
             state -> ANY_SIDE,
             // в бассейн кладут сверху; к его бокам ставят блоки (воронки, лотки)
@@ -76,7 +73,6 @@ public final class SceneBlocks {
             (level, pos) -> SceneKinds.BASIN,
             stack -> false);
 
-    /** The Blaze Burner: fed through its cage, lit with flint and steel when empty. */
     public static final SceneBlock BURNER = new SceneBlock(CineCreate.id("blaze_burner"), create("blaze_burner"), BurnerMenu.class,
             state -> ANY_SIDE,
             // сверху на горелку ставят бассейн: верх остаётся за Create
@@ -87,7 +83,6 @@ public final class SceneBlocks {
             (level, pos) -> SceneKinds.BURNER,
             stack -> false);
 
-    /** The Item Drain: a container laid on its grate is drained by Create. */
     public static final SceneBlock DRAIN = new SceneBlock(CineCreate.id("item_drain"), create("item_drain"), DrainMenu.class,
             state -> ANY_SIDE,
             // работает верхняя решётка; к бокам ставят воронки и лотки
@@ -99,13 +94,13 @@ public final class SceneBlocks {
             stack -> false);
 
     /**
-     * The Deployer, for the hand-off at its hand. Only sideways: one facing down works a depot (that depot's scene), and
-     * nobody stands at the hand of one facing up.
+     * The Deployer's hand-off: sideways from before its hand, up or down from any side (one facing down onto a depot is
+     * that depot's scene: a click on it goes there first).
      */
     public static final SceneBlock DEPLOYER = new SceneBlock(CineCreate.id("deployer"), create("deployer"), DeployerMenu.class,
             state -> {
                 Direction facing = state.getValue(BlockStateProperties.FACING);
-                return facing.getAxis().isHorizontal() ? List.of(facing) : List.of();
+                return facing.getAxis().isHorizontal() ? List.of(facing) : ANY_SIDE;
             },
             (state, face) -> face == state.getValue(BlockStateProperties.FACING),
             DeployerMenu::provider,
@@ -114,7 +109,6 @@ public final class SceneBlocks {
             (level, pos) -> SceneKinds.DEPLOYER,
             stack -> false);
 
-    /** The Millstone: poured into at its mouth, ground output gathered. */
     public static final SceneBlock MILLSTONE = new SceneBlock(CineCreate.id("millstone"), create("millstone"), MillstoneMenu.class,
             state -> ANY_SIDE,
             (state, face) -> true,
@@ -134,7 +128,7 @@ public final class SceneBlocks {
             (level, pos) -> level.getBlockState(pos).getValue(BlockStateProperties.FACING) == Direction.UP ? SceneKinds.SAW : null,
             stack -> false);
 
-    /** The Weighted Ejector: a depot that throws (its depot behaviour, so the depot's bridge). */
+    /** The Weighted Ejector: a depot that throws (Create's depot behaviour, so the depot's bridge). */
     public static final SceneBlock EJECTOR = new SceneBlock(CineCreate.id("weighted_ejector"), create("weighted_ejector"), DepotMenu.class,
             state -> ANY_SIDE,
             (state, face) -> face == Direction.UP,
@@ -153,7 +147,7 @@ public final class SceneBlocks {
             CrafterMenu::provider,
             (player, state, pos) -> Bridge.useOn(player, state, faceHit(pos, state.getValue(BlockStateProperties.HORIZONTAL_FACING))),
             List.of(SceneKinds.CRAFTER),
-            // группа больше 5×5 в кадр не помещается: такой клик остаётся за Create
+            // группа больше 10×10 в кадр не помещается: такой клик остаётся за Create
             (level, pos) -> CrafterGroup.of(level, pos) != null ? SceneKinds.CRAFTER : null,
             stack -> false);
 
@@ -193,7 +187,6 @@ public final class SceneBlocks {
         return byBlock.get(state.getBlock());
     }
 
-    /** Whether this Cinematic Interactions add-on station id is ours. */
     public static boolean owns(@Nullable ResourceLocation sceneId) {
         return sceneId != null && byScene.containsKey(sceneId);
     }
@@ -202,7 +195,6 @@ public final class SceneBlocks {
         return byScene.containsKey(scene.sceneId());
     }
 
-    /** Which scene plays at this position of one of our blocks (null when the block is not ours). */
     @Nullable
     public static SceneKind kindAt(BlockGetter level, BlockPos pos) {
         SceneBlock scene = of(level.getBlockState(pos));

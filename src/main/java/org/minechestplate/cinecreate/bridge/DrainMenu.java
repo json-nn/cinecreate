@@ -19,11 +19,10 @@ import net.neoforged.neoforge.items.IItemHandler;
 import org.minechestplate.cinecreate.registry.CineMenus;
 
 /**
- * An Item Drain: slot 0 is what lies on its grate. Laid down, it goes in through the drain's own side input from the
- * side away from the player, as a belt or a funnel would put it in: Create rolls it to the middle, drains it, rolls it on
- * toward the player and puts it off the edge there (or into what stands on that side). One filled container at a time,
- * as the drain takes them. There is no button: Create's own click on a drain only empties into it, and its tank gives
- * its liquid to pipes, not to a bucket.
+ * An Item Drain: slot 0 is what lies on its grate. It goes in through the drain's own side input from the side away
+ * from the player, as a belt or a funnel would put it: Create rolls it to the middle, drains it, and rolls it on off the
+ * edge toward the player. No button: Create's own click on a drain only empties into it, and its tank feeds pipes, not
+ * a bucket.
  */
 public class DrainMenu extends BridgeMenu {
     public static final int MAIN = 0;
@@ -37,7 +36,6 @@ public class DrainMenu extends BridgeMenu {
         addPlayerInventory(inventory, 8, 84);
     }
 
-    /** Client: a plain copy the server keeps in sync. */
     private DrainMenu(int id, Inventory inventory, BlockPos pos) {
         super(CineMenus.DRAIN.get(), id, inventory, pos, 1, 1);
         Level level = inventory.player.level();
@@ -73,7 +71,6 @@ public class DrainMenu extends BridgeMenu {
         return GenericItemEmptying.canItemBeEmptied(level, stack);
     }
 
-    /** Server: what lies on the grate, put in and taken out through the drain's side input. */
     private static final class GrateSlot extends Slot {
         private final ItemDrainBlockEntity drain;
         @Nullable

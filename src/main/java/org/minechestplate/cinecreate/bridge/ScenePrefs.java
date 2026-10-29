@@ -33,7 +33,6 @@ public final class ScenePrefs {
     /** Client: whether the calling thread is the client's own, not the integrated server's next to it. */
     private static volatile BooleanSupplier onClientThread = () -> false;
 
-    /** Client setup: where the local player's choices come from, and how to tell the client's thread. */
     public static void useOnClient(Function<SceneKind, Trigger> choices, BooleanSupplier clientThread) {
         local = choices;
         onClientThread = clientThread;
@@ -41,7 +40,7 @@ public final class ScenePrefs {
 
     /**
      * How this player starts this scene. On the server, a player who has sent nothing (a client without cinecreate,
-     * or not yet) gets USE: every right-click starts the scene, as before the policy existed.
+     * or not yet) gets USE.
      */
     public static Trigger of(Player player, SceneKind kind) {
         if (player.level().isClientSide()) {

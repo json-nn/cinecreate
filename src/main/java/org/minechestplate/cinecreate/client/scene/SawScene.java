@@ -16,6 +16,8 @@ import java.util.List;
 import javax.annotation.Nullable;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -24,42 +26,50 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.SawMenu;
+import org.minechestplate.cinecreate.client.layout.Layouts;
 
 /**
- * A Mechanical Saw facing up (DESIGN §7.8), the stonecutter of Create. The stone is laid on the table, and the shapes it
- * can be cut into hang in an arc behind the blade (CI's stonecutter dial). Choosing one sets the saw's filter: that shape
- * glows, the others dim. While the blade spins, one hand pushes the stone along in step with Create's own progress,
- * dust sprays in the stone's colour, and the other hand waits at the far edge where the pieces come out.
+ * A Mechanical Saw facing up (DESIGN §7.8), the stonecutter of Create: the shapes the stone on the table can be cut into
+ * hang on an arc behind the blade, as CI's stonecutter dial, and choosing one sets the saw's filter. While it cuts, one
+ * hand pushes the stone in step with Create's progress and the other waits where the pieces come out.
  */
 public class SawScene extends CineStation<SawMenu> {
     /** The table (the saw's 12 px casing). */
     static final double TABLE = 12 / 16.0;
-    /** The dial: as wide and as high as CI's stonecutter's; how big a shape is drawn. */
+    /** The dial, as CI's stonecutter's: as wide and as high, how big a shape is drawn, how many shapes it holds at once. */
     static final double DIAL_WIDE = 0.72, DIAL_HIGH = 0.5;
     static final float SHAPE_SIZE = 0.15f;
+    public static final int DIAL = 9;
     /** Laying down: seconds, the beat. Taking back: seconds, the beat. Touching a shape: seconds, the beat. */
     static final double LAY = 0.55, LAY_BEAT = 0.38, TAKE = 0.45, TAKE_BEAT = 0.22, CHOOSE = 0.3, CHOOSE_BEAT = 0.14;
-    /** The fist over the table: carrying, bare. */
+    /** The fist over the table: carrying, bare; and the resting hands' height. */
     static final double CARRY = 0.17, BARE = 0.11, HAND_Y = 0.062;
     /** Dust: sparks per tick per RPM, at most this many a tick (110 a second). */
     static final double DUST_PER_RPM = 5.5 / 256, DUST_MOST = 5.5;
     /** Half the table the cursor can touch. */
     static final double PLATE = 0.46;
 
-    /** Development only ({@code SmokeTest}): what {@link #hoverTable}/{@link #hoverShape} pointed at stays pointed at. */
+    /** Development (SmokeTest): what hoverTable or hoverShape pointed at stays pointed at. */
     public static boolean smokePin;
-    /** Development: stacks laid down, shapes chosen, cuts Create finished (and the first piece of the last one), dust sparks. */
+    /** Development (SmokeTest): stacks laid, shapes chosen, cuts finished (and the last one's first piece), dust sparks. */
     public int laid, chosen, cuts, sparks;
     public ItemStack lastCut = ItemStack.EMPTY;
 
     private final Vec3 top;
     private boolean onTable;
-    private int hoverShape = -1;
+    private int hoverShape = -1, lastHover = -1;
+    /** How far the wheel has turned the dial (shapes along), and how far it eases to. */
+    private double turned;
+    private int turnTo;
+    /** The shapes for an input, worked out once for it (it goes through every cutting recipe). */
+    private List<ItemStack> shapes = List.of();
+    private ItemStack shapesFor = ItemStack.EMPTY;
     private enum Move { LAY, TAKE, CHOOSE }
     private Move move = Move.LAY;
     /** The input the dial shows shapes for, and when that changed (the shapes pop in). */
@@ -71,6 +81,12 @@ public class SawScene extends CineStation<SawMenu> {
     public SawScene(BlockPos pos, Direction side) {
         super(pos, side, SawMenu.class, 0);
         top = Vec3.atBottomCenterOf(pos).add(0, TABLE, 0);
+    }
+
+    @Override
+    public void devLines(List<String> lines) {
+        lines.add(String.format(java.util.Locale.ROOT, "dial: %d shapes of %s · turned %.2f → %d · hovered %d", shapes.size(),
+                shapesFor.isEmpty() ? "nothing" : shapesFor.getHoverName().getString(), turned, turnTo, hoverShape));
     }
 
     @Nullable
@@ -107,8 +123,8 @@ public class SawScene extends CineStation<SawMenu> {
     }
 
     /**
-     * Where Create draws what is on the table: from the entry edge to the middle while it is cut, then on to the far
-     * edge as the pieces leave (Create's renderer, without its frame interpolation).
+     * Where Create's renderer draws what is on the table (without its frame interpolation): from the entry edge to the
+     * middle while it is cut, then on to the far edge.
      */
     private Vec3 piecePoint() {
         SawBlockEntity saw = saw();
@@ -133,6 +149,17 @@ public class SawScene extends CineStation<SawMenu> {
     @Override
     public Vec3 center() {
         return top;
+    }
+
+    @Override
+    public List<Component> spotNames() {
+        return List.of(Component.translatable("cinematic.spatial_editor.stone"), Component.translatable("cinematic.spatial_editor.shapes"));
+    }
+
+    /** The table where the stone is laid; the middle of the dial's arc. */
+    @Override
+    public Vec3 spotBase(int spot) {
+        return spot == 0 ? top : top.add(side().scale(-0.06)).add(0, 0.04, 0);
     }
 
     @Override
@@ -168,10 +195,7 @@ public class SawScene extends CineStation<SawMenu> {
         return 50f;
     }
 
-    /**
-     * Hands on the near rim. While the saw cuts, one pushes the work along, just behind where Create draws it, and the
-     * other waits at the far edge for the pieces.
-     */
+    /** While the saw cuts, one hand pushes just behind where Create draws the work; the other waits at the far edge. */
     @Override
     protected Vec3 restAt(boolean right) {
         Vec3 rim = top.add(side().scale(0.36)).add(right().scale(right ? 0.28 : -0.3)).add(0, HAND_Y, 0);
@@ -194,11 +218,26 @@ public class SawScene extends CineStation<SawMenu> {
 
     // ---- the dial ------------------------------------------------------------------------------------
 
-    /** The shapes on the dial, for what is on the table, or what is carried while the table is empty. */
+    /** All the shapes, for what is on the table, or for what is carried while the table is empty. */
     private List<ItemStack> shapes() {
         Minecraft mc = Minecraft.getInstance();
         SawMenu menu = menu();
-        return mc.level == null || menu == null ? List.of() : SawMenu.shapes(mc.level, SawMenu.input(slot(SawMenu.TABLE), menu.getCarried()));
+        if (mc.level == null || menu == null) {
+            return List.of();
+        }
+        ItemStack input = SawMenu.input(slot(SawMenu.TABLE), menu.getCarried());
+        if (!ItemStack.isSameItemSameComponents(input, shapesFor)) {
+            // по всем рецептам — только когда сменилось то, что пилят; выбранная форма — на диске
+            shapesFor = input.copy();
+            shapes = SawMenu.shapes(mc.level, input);
+            turnTo = Mth.clamp(selected(shapes) - DIAL / 2, 0, Math.max(0, shapes.size() - DIAL));
+            turned = turnTo;
+        }
+        return shapes;
+    }
+
+    private int lastTurn() {
+        return Math.max(0, shapes().size() - DIAL);
     }
 
     /** The shape the saw's filter is set to, or -1. */
@@ -217,32 +256,55 @@ public class SawScene extends CineStation<SawMenu> {
         return -1;
     }
 
-    private double step(int n) {
+    private int visible() {
+        return Math.min(DIAL, shapes().size());
+    }
+
+    private double step() {
+        int n = visible();
         return n <= 1 ? 0 : Math.min(22, 144.0 / (n - 1));
     }
 
-    /** A shape's place on the dial: an arc behind the blade, as CI's stonecutter hangs its shapes. */
-    private Vec3 shapePoint(int k, int n) {
-        double a = Math.toRadians(90 + ((n - 1) / 2.0 - k) * step(n));
-        double bob = 0.008 * Math.sin(Scene.clock() * 1.7 + k * 1.3);
-        return top.add(side().scale(-0.06)).add(right().scale(Math.cos(a) * DIAL_WIDE)).add(0, 0.04 + Math.sin(a) * DIAL_HIGH + bob, 0);
+    /** A shape's angle on the arc (90° straight up), as the dial is turned. */
+    private double angle(int k) {
+        return 90 + ((visible() - 1) / 2.0 - (k - turned)) * step();
     }
 
-    /** Scrolling turns the dial: the filter steps to the next shape (past the last one: no filter). */
+    /** How far a shape is on the dial: those turned past its ends fade away (CI's). */
+    private double onDial(int k) {
+        double a = angle(k);
+        return Anim.smoother(Anim.window(a, 4, 18)) * Anim.smoother(Anim.window(176 - a, 0, 14));
+    }
+
+    private Vec3 shapePoint(int k) {
+        return onArc(angle(k), 0.008 * Math.sin(Scene.clock() * 1.7 + k * 1.3));
+    }
+
+    /** Just past an end of the arc, where "more this way" shows. */
+    private Vec3 dialEnd(boolean left) {
+        return onArc(left ? 176 : 4, 0.03);
+    }
+
+    /** The arc's point at this angle, raised by lift: the layout moves the arc and stretches it (width across, depth up). */
+    private Vec3 onArc(double degrees, double lift) {
+        Layouts.Profile layout = Layouts.current(layoutId());
+        double wide = DIAL_WIDE * layout.whole().width() * layout.region(1).width() / 10000;
+        double high = DIAL_HIGH * layout.whole().depth() * layout.region(1).depth() / 10000;
+        double a = Math.toRadians(degrees);
+        return spot(1).add(right().scale(Math.cos(a) * wide)).add(0, Math.sin(a) * high + lift, 0);
+    }
+
+    /** The wheel turns the dial, a shape at a time, when there are more shapes than it holds (CI's). */
     @Override
     public void scroll(double delta) {
-        List<ItemStack> shapes = shapes();
-        if (shapes.isEmpty() || moving()) {
-            return;
+        int next = Mth.clamp(turnTo - (int) Math.signum(delta), 0, lastTurn());
+        if (next != turnTo && !moving()) {
+            turnTo = next;
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level != null) {
+                mc.level.playLocalSound(top.x, top.y, top.z, SoundEvents.UI_STONECUTTER_SELECT_RECIPE, SoundSource.PLAYERS, 0.3f, 1.4f, false);
+            }
         }
-        int now = selected(shapes);
-        int next = now - (int) Math.signum(delta);
-        if (next < -1) {
-            next = shapes.size() - 1;
-        } else if (next >= shapes.size()) {
-            next = -1;
-        }
-        choose(next);
     }
 
     /** The filter to shape k (-1: none), through the menu. */
@@ -274,42 +336,38 @@ public class SawScene extends CineStation<SawMenu> {
         }
         double[] mouse = Picking.mouseGui();
         List<ItemStack> shapes = shapes();
+        double radius = 0.075 * spotSize(1);
         for (int k = 0; k < shapes.size(); k++) {
-            if (under(mouse, shapePoint(k, shapes.size()), 0.075)) {
+            if (onDial(k) > 0.5 && underCursor(mouse, shapePoint(k), radius)) {
                 hoverShape(k);
                 return;
             }
         }
-        Vec3 hit = Picking.cursorOnPlane(top.y);
-        if (hit != null && Math.abs(hit.x - top.x) <= PLATE && Math.abs(hit.z - top.z) <= PLATE) {
+        Vec3 table = spot(0);
+        double half = PLATE * spotArea(0);
+        Vec3 hit = Picking.cursorOnPlane(table.y);
+        if (hit != null && Math.abs(hit.x - table.x) <= half && Math.abs(hit.z - table.z) <= half) {
             hoverTable();
         }
     }
 
-    /** Whether the cursor is within this far (in the world, at least 9 GUI pixels) of the point on the screen. */
-    private static boolean under(double[] mouse, Vec3 center, double radius) {
-        double[] at = Picking.toGui(center);
-        double[] edge = Picking.toGui(center.add(0, radius, 0));
-        if (at == null || edge == null) {
-            return false;
-        }
-        double r = Math.max(9, Math.hypot(at[0] - edge[0], at[1] - edge[1]));
-        return Math.hypot(mouse[0] - at[0], mouse[1] - at[1]) < r;
-    }
-
-    /** Development: points at the table as the cursor would. */
+    /** Development (SmokeTest): points at the table as the cursor would. */
     public void hoverTable() {
         onTable = true;
         hoverShape = -1;
-        aim = top.add(0, 0.02, 0);
+        aim = spot(0).add(0, 0.02, 0);
     }
 
-    /** Development: points at shape k on the dial as the cursor would. */
+    /** Points at shape k as the cursor would (development, SmokeTest: a shape off the dial is turned onto it first). */
     public void hoverShape(int k) {
         int n = shapes().size();
+        if (k < n && onDial(k) <= 0.5) {
+            turnTo = Mth.clamp(k - DIAL / 2, 0, lastTurn());
+            turned = turnTo;
+        }
         onTable = false;
         hoverShape = k;
-        aim = k < n ? shapePoint(k, n).add(0, -0.1, 0).add(side().scale(0.12)) : null;
+        aim = k < n ? shapePoint(k).add(0, -0.1, 0).add(side().scale(0.12)) : null;
     }
 
     @Override
@@ -325,7 +383,6 @@ public class SawScene extends CineStation<SawMenu> {
     protected Vec3 reach(Vec3 target, Vec3 shoulder, boolean carrying, double tap) {
         double t = moveTime();
         if (hoverShape >= 0 || t >= 0 && move == Move.CHOOSE) {
-            // the fingertip reaches up to the shape
             double touch = t >= 0 && move == Move.CHOOSE ? Anim.hump(Anim.window(t, 0, CHOOSE)) : 0;
             return target.add(side().scale(-0.06 * touch)).add(0, -0.01 * tap, 0);
         }
@@ -350,9 +407,8 @@ public class SawScene extends CineStation<SawMenu> {
     }
 
     /**
-     * On a shape: the saw's filter is set to it (touching the chosen one again clears it). On the table: something carried
-     * is laid there (a left click the stack, a right click one); an empty hand takes back what lies there, as Create's
-     * own empty-handed click does.
+     * On a shape: sets the saw's filter (the chosen one again clears it). On the table: lays what is carried (a left
+     * click the stack, a right click one), or an empty hand takes it back, as Create's own empty-handed click does.
      */
     @Override
     protected void act(int button, boolean shift) {
@@ -399,13 +455,13 @@ public class SawScene extends CineStation<SawMenu> {
                 mc.gameMode.handleInventoryMouseClick(open.containerId, SawMenu.TABLE, button == 1 ? 1 : 0, ClickType.PICKUP, mc.player);
             }
             laid++;
-            Fx.motes(top.add(0, 0.03, 0), 0.08, 5, 0.62f, 0.6f, 0.56f, 0.05);
+            Fx.motes(spot(0).add(0, 0.03, 0), 0.08, 5, 0.62f, 0.6f, 0.56f, 0.05);
         });
     }
 
     @Override
     protected Vec3 restPoint(int slot) {
-        return top;
+        return spot(0);
     }
 
     @Nullable
@@ -413,7 +469,11 @@ public class SawScene extends CineStation<SawMenu> {
     public List<Component> tooltip(ItemStack carried) {
         List<ItemStack> shapes = shapes();
         if (hoverShape >= 0 && hoverShape < shapes.size()) {
-            return List.of(shapes.get(hoverShape).getHoverName());
+            ItemStack shape = shapes.get(hoverShape);
+            Component name = shape.getCount() > 1 ? shape.getHoverName().copy().append(" ×" + shape.getCount()) : shape.getHoverName();
+            boolean chosenNow = selected(shapes) == hoverShape;
+            return List.of(name, Component.translatable(chosenNow ? "cinecreate.saw.unchoose" : "cinecreate.saw.choose")
+                    .withStyle(chosenNow ? ChatFormatting.GRAY : ChatFormatting.GOLD));
         }
         ItemStack lying = slot(SawMenu.TABLE);
         return onTable && carried.isEmpty() && !lying.isEmpty() ? List.of(lying.getHoverName()) : null;
@@ -426,7 +486,6 @@ public class SawScene extends CineStation<SawMenu> {
 
     // ---- the saw at work -----------------------------------------------------------------------------
 
-    /** Client tick: dust from the blade in the stone's colour while it cuts; a finished cut is counted with its pieces. */
     @Override
     public void tick() {
         super.tick();
@@ -476,6 +535,14 @@ public class SawScene extends CineStation<SawMenu> {
     @Override
     public void beforeFrame() {
         super.beforeFrame();
+        turned = Anim.approach(turned, turnTo, 10, Scene.frameDt);
+        if (hoverShape != lastHover && hoverShape >= 0) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level != null) {
+                mc.level.playLocalSound(top.x, top.y, top.z, SoundEvents.STONE_HIT, SoundSource.PLAYERS, 0.3f, 1.6f + hoverShape % 3 * 0.1f, false);
+            }
+        }
+        lastHover = hoverShape;
         ItemStack input = menu() == null ? ItemStack.EMPTY : SawMenu.input(slot(SawMenu.TABLE), menu().getCarried());
         if (!ItemStack.isSameItem(input, dialFor)) {
             dialFor = input.copy();
@@ -483,15 +550,11 @@ public class SawScene extends CineStation<SawMenu> {
         }
     }
 
-    /** The dial is drawn in {@link #renderWorld} (CI calls this one twice a frame for add-on stations). */
+    /** The dial is drawn in renderWorld: CI calls this one twice a frame for add-on stations. */
     @Override
     public void renderScene(PoseStack pose, MultiBufferSource buffers, Camera camera, int light) {
     }
 
-    /**
-     * The dial: each shape turning slowly on its glow, the hovered one bigger, the chosen one ringed; with a filter set,
-     * the others dim. A warm glow on the table under the cursor; red when the saw will not take what is carried.
-     */
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         SawMenu menu = menu();
@@ -504,41 +567,75 @@ public class SawScene extends CineStation<SawMenu> {
             ItemStack carried = menu.getCarried();
             boolean ok = carried.isEmpty() ? !slot(SawMenu.TABLE).isEmpty() : slot(SawMenu.TABLE).isEmpty() && accepts(SawMenu.TABLE, carried);
             float p = (float) (0.45 + 0.15 * Math.sin(clock * 4));
-            EnchantFx.disc(pose, buffers, camera, top.add(0, 0.004, 0), 0.16, 0, EnchantFx.GLOW,
+            EnchantFx.disc(pose, buffers, camera, spot(0).add(0, 0.004, 0), 0.16 * spotSize(0), 0, EnchantFx.GLOW,
                     p, ok ? p * 0.75f : p * 0.2f, ok ? p * 0.45f : p * 0.2f);
         }
         List<ItemStack> shapes = shapes();
-        int n = shapes.size();
         int chosenShape = selected(shapes);
         double appear = Anim.outBack(Anim.window(clock - shapesAt, 0, 0.4), 1.4);
-        for (int k = 0; k < n; k++) {
-            Vec3 at = shapePoint(k, n);
+        float grow = spotSize(1);
+        for (int k = 0; k < shapes.size(); k++) {
+            double on = onDial(k) * appear;
+            if (on < 0.02) {
+                continue;
+            }
+            Vec3 at = shapePoint(k);
             boolean hovered = k == hoverShape;
             boolean picked = k == chosenShape;
             double dim = chosenShape >= 0 && !picked && !hovered ? 0.4 : 1;
-            float g = (float) ((hovered ? 0.34 : picked ? 0.3 : 0.15) * appear * dim);
-            EnchantFx.billboard(pose, buffers, cam, at, (hovered ? 0.095 : 0.075) * appear, 0, EnchantFx.GLOW, g, g * 0.95f, g * 0.85f);
+            float g = (float) ((hovered ? 0.34 : picked ? 0.3 : 0.15) * on * dim);
+            EnchantFx.billboard(pose, buffers, cam, at, (hovered ? 0.095 : 0.075) * on * grow, 0, EnchantFx.GLOW, g, g * 0.95f, g * 0.85f);
             if (picked) {
-                float s = (float) (0.4 * appear);
-                EnchantFx.billboard(pose, buffers, cam, at, 0.085 * appear, clock * 0.8, EnchantFx.CIRCLE, s, s * 0.85f, s * 0.4f);
+                float r = (float) (0.4 * on);
+                EnchantFx.billboard(pose, buffers, cam, at, 0.085 * on * grow, clock * 0.8, EnchantFx.CIRCLE, r, r * 0.85f, r * 0.4f);
             }
             ItemStack shape = shapes.get(k);
-            float size = (float) (SHAPE_SIZE * appear * (hovered ? 1.35 : 1) * (0.75 + 0.25 * dim));
+            float size = (float) (SHAPE_SIZE * grow * on * (hovered ? 1.35 : 1) * (0.75 + 0.25 * dim));
             float spin = (float) (clock * (hovered ? 90 : 25) + k * 40);
             boolean block = ItemPlacer.isBlock(shape);
             ItemPlacer.drawOriented(pose, buffers, camera, shape, at, Axis.YP.rotationDegrees(spin), block ? size * 0.85f : size * 1.2f,
                     LightTexture.FULL_BRIGHT);
+            if (shape.getCount() > 1) {
+                label(pose, buffers, cam, "×" + shape.getCount(), at.add(0, -size * 0.85 - 0.02, 0), (float) on);
+            }
+        }
+        if (shapes.size() > DIAL) {
+            if (turnTo > 0) {
+                label(pose, buffers, cam, "‹", dialEnd(true), 1);
+            }
+            if (turnTo < lastTurn()) {
+                label(pose, buffers, cam, "›", dialEnd(false), 1);
+            }
         }
     }
 
-    /** Development: the saw's filter as the client sees it. */
+    /** Text facing the camera, as CI's stonecutter writes its counts; no backing, which would hide the glyphs. */
+    private static void label(PoseStack pose, MultiBufferSource buffers, Camera camera, String text, Vec3 at, float alpha) {
+        Font font = Minecraft.getInstance().font;
+        Vec3 eye = camera.getPosition();
+        pose.pushPose();
+        pose.translate(at.x - eye.x, at.y - eye.y, at.z - eye.z);
+        pose.mulPose(camera.rotation());
+        pose.scale(0.0065f, -0.0065f, 0.0065f);
+        int a = Math.max(8, (int) (alpha * 255));
+        font.drawInBatch(text, -font.width(text) / 2f, -4, a << 24 | 0xF2EAD8, false, pose.last().pose(), buffers, Font.DisplayMode.NORMAL, 0,
+                LightTexture.FULL_BRIGHT);
+        pose.popPose();
+    }
+
+    /** Development (SmokeTest): how far the dial is turned, and how far it can be. */
+    public int[] dialTurn() {
+        return new int[] {turnTo, lastTurn()};
+    }
+
+    /** Development (SmokeTest): the saw's filter as the client sees it. */
     public ItemStack filter() {
         SawBlockEntity saw = saw();
         FilteringBehaviour filter = saw == null ? null : BlockEntityBehaviour.get(saw, FilteringBehaviour.TYPE);
         return filter == null ? ItemStack.EMPTY : filter.getFilter();
     }
 
-    /** Development: the shapes on the dial right now. */
+    /** Development (SmokeTest): the shapes on the dial right now. */
     public List<ItemStack> dial() {
         return shapes();
     }

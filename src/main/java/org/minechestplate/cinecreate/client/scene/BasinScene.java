@@ -42,16 +42,13 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import org.minechestplate.cinecreate.bridge.BasinMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
-import org.minechestplate.cinecreate.client.Notices;
+import org.minechestplate.cinecreate.client.CiNotice;
 import org.minechestplate.cinecreate.station.Composites;
 
 /**
- * The Basin (DESIGN §7.6), the brewing stand of Create. Leaning over the rim, the player drops ingredients in one by
- * one: each falls and settles, with a splash on liquid or a plop on the dry floor. A bucket or a bottle tipped over the
- * rim pours its fluid in (empty, it dips in and fills up); an empty hand scoops everything out. Heat from a Blaze
- * Burner below glows on the floor, orange, or blue when it seethes. A Mechanical Mixer above makes it a watch: the
- * camera rises and backs off to show the whisk, steam and bubbles come up, and outputs flash in as they appear. Under
- * a Mechanical Press every stroke puffs dust (or splashes the liquid) and jolts the camera.
+ * The Basin (DESIGN §7.6), the brewing stand of Create: items are dropped in over the rim, buckets and bottles pour or
+ * fill, an empty hand scoops everything out. A Mechanical Mixer above makes it a watch; a Mechanical Press above jolts
+ * the camera on every stroke.
  */
 public class BasinScene extends CineStation<BasinMenu> {
     /** The basin's floor and rim, up from its bottom (walls 2 px thick). */
@@ -64,10 +61,7 @@ public class BasinScene extends CineStation<BasinMenu> {
     static final double TAKE = 0.45, TAKE_BEAT = 0.22;
     /** The fist over the opening: carrying, bare; how deep it reaches in to take or to fill. */
     static final double CARRY = 0.2, BARE = 0.15, DIP = 0.45;
-    /**
-     * The camera from the middle of the inside: out toward the player, and up. Steep, about 70° down: from less steep
-     * the near wall hides the floor and what lies on it.
-     */
+    /** The camera from the middle of the inside, out and up: about 70° down, else the near wall hides the floor. */
     static final double CAMERA_OUT = 0.55, CAMERA_UP = 1.25;
     /** The watch over a mixer: how much higher and farther back the camera goes (still seeing the floor), and over how long. */
     static final double RISE = 0.3, BACK = 0.1, WATCH_TIME = 0.6;
@@ -82,12 +76,15 @@ public class BasinScene extends CineStation<BasinMenu> {
     /** The flash when outputs appear; the jolt of a press stroke. */
     static final double FLASH = 0.05, FLASH_DECAY = 10, KICK = 0.25, KICK_DECAY = 14;
     static final int WARM = 0xFFF2C8, KINDLED = 0xFF8A2A, SEETHING = 0x3AA0FF;
+    /** The pour's stream: sparks a second (as 2 a frame at 60 fps), and those owed since the last frame. */
+    static final double STREAM_RATE = 120;
+    private double streamSparks;
     /** Steam over a mixing basin: a puff every this many ticks. */
     static final int STEAM_EVERY = 3;
 
-    /** Development only ({@code SmokeTest}): the basin counts as pointed at while the cursor is somewhere else. */
+    /** Development (SmokeTest): the basin counts as pointed at wherever the cursor is. */
     public static boolean smokePin;
-    /** Development: things dropped in, pours and fills, takes, clicks refused, outputs seen appearing, press strokes. */
+    /** Development (SmokeTest): drops, pours and fills, takes, clicks refused, outputs seen appearing, press strokes. */
     public int drops, pours, takes, denials, outputs, strokes;
 
     /** The middle of the inside, and the middle of the opening at the rim. */
@@ -97,7 +94,6 @@ public class BasinScene extends CineStation<BasinMenu> {
     private enum Move { DROP, POUR, FILL, TAKE }
 
     private Move move = Move.DROP;
-    /** The fluid being poured (for the stream's colour). */
     private FluidStack pouring = FluidStack.EMPTY;
     /** Where the held item was drawn last frame (the dropped one falls from there). */
     @Nullable
@@ -134,6 +130,27 @@ public class BasinScene extends CineStation<BasinMenu> {
     }
 
     @Override
+    public List<Component> spotNames() {
+        return List.of(Component.translatable("cinecreate.layout.spot.drop"));
+    }
+
+    @Override
+    public Vec3 spotBase(int spot) {
+        return top;
+    }
+
+    /** Where the hand drops and pours in (the layout's drop point). */
+    private Vec3 dropAt() {
+        return spot(0);
+    }
+
+    /** Where what is dropped or poured in lands: on the contents, under the drop point. */
+    private Vec3 landing() {
+        Vec3 shift = dropAt().subtract(top);
+        return surface().add(shift.x, 0, shift.z);
+    }
+
+    @Override
     protected List<Vec3> stand(LocalPlayer player) {
         Vec3 stand = new Vec3(inside.x + side.getStepX() * 0.86, player.getY(), inside.z + side.getStepZ() * 0.86);
         Views.noteStand(this, stand);
@@ -148,7 +165,7 @@ public class BasinScene extends CineStation<BasinMenu> {
 
     /**
      * A basin often stands on a Blaze Burner, its inside 1.5 above the feet: higher than CI lets a tabletop be, but the
-     * player still leans over its rim. Below that and within the usual step of it.
+     * player still leans over its rim.
      */
     @Override
     protected boolean bareWorkable(Vec3 feet) {
@@ -158,8 +175,8 @@ public class BasinScene extends CineStation<BasinMenu> {
     }
 
     /**
-     * With an Extendo Grip: a basin too high to lean over is hung from, the grip hooked on its rim (close enough to
-     * climb, within Create's reach of the grip); any other within that reach is worked from where the player stands.
+     * With an Extendo Grip: a basin too high to lean over is hung from by the rim (close enough to climb); any other
+     * within the grip's reach is worked from where the player stands.
      */
     @Override
     protected boolean gripWorkable(Vec3 feet) {
@@ -168,21 +185,22 @@ public class BasinScene extends CineStation<BasinMenu> {
             return Grip.reaches(feet, pos) && Math.hypot(inside.x - feet.x, inside.z - feet.z) <= 1.5
                     && Views.reachable(this, feet, Set.of(pos));
         }
-        return high >= -0.6 && Grip.reaches(feet, pos);
+        // ближе 1,5 вид всё равно над краем (свободная камера): его, как и без захвата, не ставить за блоком
+        boolean close = Math.hypot(inside.x - feet.x, inside.z - feet.z) <= 1.5;
+        return high >= -0.6 && Grip.reaches(feet, pos) && (!close || Views.reachable(this, feet, Set.of(pos)));
     }
 
-    /** Hanging from the rim by a grip (the basin out of a bare arm's reach above). */
     private boolean hanging() {
         LocalPlayer player = Minecraft.getInstance().player;
         return player != null && Grip.inHand() && inside.y - player.getY() > HANG;
     }
 
-    /** Development: hanging from the rim by a grip right now. */
+    /** Development (SmokeTest): hanging from the rim by a grip right now. */
     public boolean hangingNow() {
         return hanging();
     }
 
-    /** Working it from afar with a grip: from where the player stands, the view at their eyes. */
+    /** Worked from afar with a grip: the view stays at the player's eyes. */
     private boolean fromFar() {
         LocalPlayer player = Minecraft.getInstance().player;
         return player != null && Grip.inHand() && !hanging() && Math.hypot(inside.x - player.getX(), inside.z - player.getZ()) > 1.5;
@@ -193,10 +211,7 @@ public class BasinScene extends CineStation<BasinMenu> {
         return hanging() || letGoAt >= 0;
     }
 
-    /**
-     * The grip hooks the rim on the player's side, to the left (it is in the left hand; the right works): the claw's
-     * palm on the wall, its fingers over into the basin, the fist below the rim outside.
-     */
+    /** On the rim on the player's side, to the left: the grip is in the left hand, and the right one works. */
     @Override
     protected Vec3 hookPoint() {
         return top.add(side().scale(0.44)).add(right().scale(-0.34)).add(0, 0.06, 0);
@@ -213,13 +228,12 @@ public class BasinScene extends CineStation<BasinMenu> {
         super.gripLost();
     }
 
-    /** Over the rim, looking down into the basin (on a burner, higher than the player's head: the camera rises to it); from afar, at the eyes. */
+    /** Over the rim (on a burner, higher than the player's head); from afar, at the eyes. */
     @Override
     public boolean freeCamera() {
         return !fromFar();
     }
 
-    /** Leaning over the rim, looking down into the basin; over a mixer it rises and backs off to show the whisk. */
     @Override
     public CameraRig.Pose lean() {
         double k = Anim.inOutCubic(watch);
@@ -252,7 +266,7 @@ public class BasinScene extends CineStation<BasinMenu> {
         return 50f;
     }
 
-    /** The falling view has come down to the player's eyes (or fallen long enough): the scene ends there, with a thud. */
+    /** The falling view has come down to the player's eyes (or fallen long enough): the scene ends with a thud. */
     private void land() {
         Minecraft mc = Minecraft.getInstance();
         double t = Scene.clock() - letGoAt;
@@ -262,16 +276,15 @@ public class BasinScene extends CineStation<BasinMenu> {
         letGoAt = -1;
         mc.level.playLocalSound(mc.player.getX(), mc.player.getY(), mc.player.getZ(), SoundEvents.PLAYER_SMALL_FALL,
                 SoundSource.PLAYERS, 0.8f, 1f, false);
-        Notices.about(pos, Component.translatable("cinecreate.notice.grip_dropped"));
+        CiNotice.show(Component.translatable("cinecreate.notice.grip_dropped"));
         Scene.abort();
     }
 
-    /** When the grip was let go of while hanging (the fall), and where the view fell from; -1: not falling. */
+    /** When the grip was let go of while hanging, and where the view fell from; -1: not falling. */
     private double letGoAt = -1;
     @Nullable
     private Vec3 hungFrom;
 
-    /** Fists on the near rim, either side. */
     @Override
     protected Vec3 restAt(boolean right) {
         return top.add(side().scale(0.44)).add(right().scale(right ? 0.28 : -0.28)).add(0, 0.04, 0);
@@ -285,7 +298,6 @@ public class BasinScene extends CineStation<BasinMenu> {
 
     // ---- interaction ---------------------------------------------------------------------------------
 
-    /** The basin has one opening: the cursor over it points the hand there. */
     @Override
     public void updateCursor(boolean overPanel) {
         if (moving()) {
@@ -300,16 +312,18 @@ public class BasinScene extends CineStation<BasinMenu> {
         if (overPanel) {
             return;
         }
-        Vec3 hit = Picking.cursorOnPlane(top.y);
-        if (hit != null && Math.abs(hit.x - top.x) <= 0.5 && Math.abs(hit.z - top.z) <= 0.5) {
+        Vec3 at = dropAt();
+        double half = 0.5 * spotArea(0);
+        Vec3 hit = Picking.cursorOnPlane(at.y);
+        if (hit != null && Math.abs(hit.x - at.x) <= half && Math.abs(hit.z - at.z) <= half) {
             hover();
         }
     }
 
-    /** Development: points at the basin as the cursor would. */
+    /** Development (SmokeTest): points at the basin as the cursor would. */
     public void hover() {
         hovered = true;
-        aim = top;
+        aim = dropAt();
     }
 
     @Override
@@ -327,13 +341,9 @@ public class BasinScene extends CineStation<BasinMenu> {
             return target.add(0, (carrying ? CARRY : BARE) - 0.02 * tap, 0);
         }
         return switch (move) {
-            // над серединой, отпустить, рука поднимается
             case DROP -> target.add(0, CARRY + 0.08 * Anim.outCubic(Anim.window(t, DROP_BEAT, DROP)), 0);
-            // над ближним краем, сосуд наклоняется
             case POUR -> target.add(side().scale(0.12)).add(0, CARRY + 0.05, 0);
-            // зачерпнуть: опустить сосуд внутрь и поднять
             case FILL -> target.add(0, CARRY - (CARRY + DIP) * dip(t, POUR_BEAT, POUR), 0);
-            // взять: рука внутрь, пальцы сжимаются, наверх
             case TAKE -> target.add(0, BARE - (BARE + DIP) * dip(t, TAKE_BEAT, TAKE), 0);
         };
     }
@@ -349,7 +359,6 @@ public class BasinScene extends CineStation<BasinMenu> {
         return held;
     }
 
-    /** Held at a slant; a bucket or a bottle tips over the rim to pour, and rights itself after. */
     @Override
     public float heldItemTilt() {
         double t = moveTime();
@@ -362,8 +371,7 @@ public class BasinScene extends CineStation<BasinMenu> {
 
     /**
      * As Create's own click: a fluid container pours (or, empty, fills up), anything else is dropped in (the left
-     * button the whole stack, the right one item), an empty hand takes everything out. What the basin cannot take: the
-     * hands shake.
+     * button the whole stack, the right one item), an empty hand takes everything out.
      */
     @Override
     protected void act(int button, boolean shift) {
@@ -414,7 +422,7 @@ public class BasinScene extends CineStation<BasinMenu> {
             if (now.getCount() > before.getCount()) {
                 falling = now.copyWithCount(1);
                 hadBefore = createHas(falling);
-                fallFrom = held != null ? held : top.add(0, CARRY, 0);
+                fallFrom = held != null ? held : dropAt().add(0, CARRY, 0);
                 fellAt = Scene.clock();
                 landed = false;
                 drops++;
@@ -437,7 +445,7 @@ public class BasinScene extends CineStation<BasinMenu> {
         startMove(POUR, POUR_BEAT, () -> {
             buttonClick(BasinMenu.USE);
             pours++;
-            splash(surface(), 6);
+            splash(landing(), 6);
         });
     }
 
@@ -463,7 +471,7 @@ public class BasinScene extends CineStation<BasinMenu> {
         return false;
     }
 
-    /** A click on the menu right now (the move's beat: {@code slotClick} waits for the move to end). */
+    /** A click on the menu right now, at the move's beat (CI's slotClick would wait for the move to end). */
     private void click(int slot, int button, ClickType type) {
         Minecraft mc = Minecraft.getInstance();
         BasinMenu menu = menu();
@@ -519,7 +527,6 @@ public class BasinScene extends CineStation<BasinMenu> {
         return mc.level != null && mc.level.getBlockEntity(pos) instanceof BasinBlockEntity basin ? basin : null;
     }
 
-    /** How much fluid the basin holds, as Create draws it. */
     private float fluidUnits() {
         BasinBlockEntity basin = basin();
         return basin == null ? 0 : basin.getTotalFluidUnits(Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false));
@@ -567,7 +574,6 @@ public class BasinScene extends CineStation<BasinMenu> {
         return mc.level == null ? null : Composites.mixerOver(mc.level, pos);
     }
 
-    /** Client tick: steam and bubbles over a mixing basin, and outputs appearing (they rise and flash in). */
     @Override
     public void tick() {
         super.tick();
@@ -593,7 +599,6 @@ public class BasinScene extends CineStation<BasinMenu> {
         lastOutputs = now;
     }
 
-    /** Once a frame: the camera's way to the watch, the pour's stream, a press stroke, and the dropped item landing. */
     @Override
     public void beforeFrame() {
         super.beforeFrame();
@@ -602,19 +607,20 @@ public class BasinScene extends CineStation<BasinMenu> {
         if (move == Move.POUR && t >= STREAM_FROM && t <= STREAM_TO && !pouring.isEmpty() && held != null) {
             int tint = tint(pouring);
             Vec3 mouth = held.add(side().scale(-0.06));
-            for (int i = 0; i < 2; i++) {
-                Fx.spark(mouth, new Vec3(0, -1.6, 0).add(inside.subtract(mouth).multiply(1, 0, 1)), 0.22, 0.016f,
+            streamSparks += STREAM_RATE * Scene.frameDt;
+            for (; streamSparks >= 1; streamSparks--) {
+                Fx.spark(mouth, new Vec3(0, -1.6, 0).add(landing().subtract(mouth).multiply(1, 0, 1)), 0.22, 0.016f,
                         red(tint), green(tint), blue(tint), 3.0, 0.05);
             }
         }
         pressStroke();
         if (!falling.isEmpty() && !landed && Scene.clock() - fellAt >= FALL) {
             landed = true;
-            splash(surface(), 5);
+            splash(landing(), 5);
         }
     }
 
-    /** A press above: each stroke, timed as the press scene times its impact (the head on the work). */
+    /** A press above: each stroke, timed as the press scene times its impact. */
     private void pressStroke() {
         Minecraft mc = Minecraft.getInstance();
         MechanicalPressBlockEntity press = mc.level == null ? null : Composites.pressOver(mc.level, pos);
@@ -642,7 +648,6 @@ public class BasinScene extends CineStation<BasinMenu> {
         }
     }
 
-    /** Liquid splashes up in its colour; on the dry floor, a plop. */
     private void splash(Vec3 at, int count) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
@@ -708,7 +713,6 @@ public class BasinScene extends CineStation<BasinMenu> {
         return mixing;
     }
 
-    /** The heat a Blaze Burner below gives, as Create reads it. */
     public HeatLevel heat() {
         Minecraft mc = Minecraft.getInstance();
         return mc.level == null ? HeatLevel.NONE : BasinBlockEntity.getHeatLevelOf(mc.level.getBlockState(pos.below()));
@@ -716,7 +720,7 @@ public class BasinScene extends CineStation<BasinMenu> {
 
     // ---- drawing -------------------------------------------------------------------------------------
 
-    /** The item just dropped, falling, then lying on the contents until Create draws it. Drawn once a frame. */
+    /** The item just dropped, until Create draws it; drawn once a frame (CI calls this twice). */
     @Override
     public void renderScene(PoseStack pose, MultiBufferSource buffers, Camera camera, int light) {
         long frame = FrameCounter.frame();
@@ -733,14 +737,10 @@ public class BasinScene extends CineStation<BasinMenu> {
             return;
         }
         double k = Anim.clamp01(age / FALL);
-        Vec3 at = Anim.lerp(fallFrom, surface(), k * k);
-        ItemPlacer.renderOne(pose, buffers, camera.getPosition(), falling, at, side, 31L, 1f, (float) (18 * (1 - k)), light);
+        Vec3 at = Anim.lerp(fallFrom, landing(), k * k);
+        ItemPlacer.renderOne(pose, buffers, camera.getPosition(), falling, at, side, 31L, spotSize(0), (float) (18 * (1 - k)), light);
     }
 
-    /**
-     * Heat from a burner below glows on the floor, orange, or blue when it seethes; the contents glow warm under the
-     * cursor, or red when what is carried will not go in.
-     */
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         HeatLevel heat = heat();
@@ -756,11 +756,11 @@ public class BasinScene extends CineStation<BasinMenu> {
         }
         float p = (float) (0.45 + 0.15 * Math.sin(clock * 4));
         boolean ok = !refusesCarried();
-        EnchantFx.disc(pose, buffers, camera, surface().add(0, 0.01, 0), 0.22, 0, EnchantFx.GLOW,
+        EnchantFx.disc(pose, buffers, camera, landing().add(0, 0.01, 0), 0.22, 0, EnchantFx.GLOW,
                 p, ok ? p * 0.75f : p * 0.2f, ok ? p * 0.45f : p * 0.2f);
     }
 
-    /** What the hand carries would be refused (checked as {@link #act} decides). */
+    /** What the hand carries would be refused (checked as act decides). */
     private boolean refusesCarried() {
         Minecraft mc = Minecraft.getInstance();
         BasinMenu menu = menu();

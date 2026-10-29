@@ -5,7 +5,6 @@ import dev.dyslexic.cinematic.api.client.AddonScenes;
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.ClientStation;
 import dev.dyslexic.cinematic.client.Reach;
-import dev.dyslexic.cinematic.client.ReachNotice;
 import dev.dyslexic.cinematic.client.Scene;
 import dev.dyslexic.cinematic.station.StationKind;
 import java.util.ArrayList;
@@ -22,22 +21,23 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import org.lwjgl.glfw.GLFW;
+import org.minechestplate.cinecreate.bridge.Bridge;
 import org.minechestplate.cinecreate.bridge.ScenePrefsPayload;
+import org.minechestplate.cinecreate.client.scene.Grip;
 import org.minechestplate.cinecreate.station.SceneBlocks;
 import org.minechestplate.cinecreate.station.SceneKind;
 import org.minechestplate.cinecreate.station.Trigger;
 
 /**
- * The "Work at the machine" key. It defaults to H, the same as Cinematic Interactions' campfire, so H always means "do
- * this cinematically" (NeoForge hands a key to every mapping on it, and each one acts only on its own blocks). Looking
- * at one of our blocks, or at a machine working one (a press over a depot), it starts the scene unless the player
- * turned that kind of scene off. Where the scene starts only on the key, a small "[H] Work at the depot" plate under the
- * crosshair invites to it, drawn like CI's campfire one.
+ * The "Work at the machine" key and, where a scene starts only on the key, its "[H] Work at the depot" plate under the
+ * crosshair (DESIGN §5.3). It defaults to H, the same as Cinematic Interactions' campfire, so H always means "do this
+ * cinematically" (NeoForge hands a key to every mapping on it, and each one acts only on its own blocks).
  */
 public final class WorkKey {
     private WorkKey() {}
@@ -45,39 +45,47 @@ public final class WorkKey {
     public static final KeyMapping WORK = new KeyMapping("key.cinecreate.work", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H,
             "key.categories.cinecreate");
 
-    /** As near as Cinematic Interactions wants a player for its campfire. */
-    private static final double REACH_SQR = 4.5 * 4.5;
+    /** As near as Cinematic Interactions wants a player for its campfire; with an Extendo Grip, as far as a scene can be begun. */
+    private static final double REACH_SQR = 4.5 * 4.5, GRIP_REACH_SQR = Bridge.SCENE_REACH * Bridge.SCENE_REACH;
 
     /** The invitation's fade (0..1), and the text it fades out with. */
     private static double shown;
     private static Component text = Component.empty();
-    /** The last reach check: for this block, from the block the player stood on then. */
     @Nullable
     private static BlockPos checkedPos, checkedFrom;
+    private static boolean checkedGrip;
+    @Nullable
+    private static Level checkedLevel;
     @Nullable
     private static Reach.Plan checked;
 
-    /** The key starts the scene there, or Cinematic Interactions' notice says why it cannot. */
+    /**
+     * What the crosshair is on, worked out once a tick: the plate is drawn every frame, and telling a depot's kind of
+     * scene looks round it for a fan's stream.
+     */
+    @Nullable
+    private static Target lookedNow;
+    private static int lookedTick = -1, ticks;
+
     static void onTick(ClientTickEvent.Post event) {
+        ticks++;
         while (WORK.consumeClick()) {
             Target target = looked();
             Reach.Plan plan = target == null ? null : plan(Minecraft.getInstance().player, target.pos());
             if (plan == null) {
                 continue;
             }
-            if (plan.scene()) {
+            if (ClientMode.active()) {
+                ClientMode.begin(target.pos());
+            } else if (plan.scene()) {
                 Scene.begin(target.pos(), StationKind.ADDON);
             } else if (plan.reason() != null) {
-                // без сцены клавиша сама ничего не делает: обычное действие Create — это правый клик
-                ReachNotice.show(plan.reason(), plan.blocker());
+                CiNotice.refused(target.pos(), plan.reason(), plan.blocker());
             }
         }
     }
 
-    /**
-     * The block the plate invites to right now: under the crosshair, its scene starts on the key (not on a right-click),
-     * and the scene can happen from here. Null otherwise, and when the invitation is turned off.
-     */
+    /** The block the plate invites to right now, or null (SmokeTest reads it too). */
     @Nullable
     public static BlockPos invited() {
         Target target = invitation();
@@ -89,6 +97,9 @@ public final class WorkKey {
         Target target = ClientConfig.invitation() ? looked() : null;
         if (target == null || ClientConfig.trigger(target.kind()) != Trigger.KEY) {
             return null;
+        }
+        if (ClientMode.active()) {
+            return target;
         }
         Reach.Plan plan = plan(Minecraft.getInstance().player, target.pos());
         return plan != null && plan.scene() ? target : null;
@@ -122,15 +133,19 @@ public final class WorkKey {
         g.drawString(font, text, kx + keyW + 5, y + 4, argb(alpha, 242, 234, 216), false);
     }
 
-    /** One of our blocks with the kind of scene it plays there. */
     private record Target(BlockPos pos, SceneKind kind) {}
 
-    /**
-     * What the crosshair is on: one of our blocks, or a machine working one (then the block it works), near enough, on
-     * a server with the mod, and its kind of scene not turned off.
-     */
     @Nullable
     private static Target looked() {
+        if (lookedTick != ticks) {
+            lookedTick = ticks;
+            lookedNow = lookUp();
+        }
+        return lookedNow;
+    }
+
+    @Nullable
+    private static Target lookUp() {
         Minecraft mc = Minecraft.getInstance();
         if (Scene.active() || mc.screen != null || mc.player == null || mc.level == null || mc.player.isSpectator()
                 || !(mc.hitResult instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
@@ -141,17 +156,21 @@ public final class WorkKey {
         ClientPacketListener connection = mc.getConnection();
         boolean ours = kind != null && ClientConfig.trigger(kind) != Trigger.OFF
                 && AddonScenes.available(mc.level.getBlockState(pos))
-                && connection != null && connection.hasChannel(ScenePrefsPayload.TYPE);
-        return ours && mc.player.distanceToSqr(pos.getCenter()) < REACH_SQR ? new Target(pos, kind) : null;
+                && connection != null && (connection.hasChannel(ScenePrefsPayload.TYPE) || ClientMode.active());
+        double reach = Grip.inHand() ? GRIP_REACH_SQR : REACH_SQR;
+        return ours && mc.player.distanceToSqr(pos.getCenter()) < reach ? new Target(pos, kind) : null;
     }
 
-    /** Whether (and how) the scene can happen there: checked again only once the block or the player's block changes. */
+    /** Whether (and how) the scene can happen there; cached per block, the player's block, grip in hand and world. */
     @Nullable
     private static Reach.Plan plan(LocalPlayer player, BlockPos pos) {
         BlockPos from = player.blockPosition();
-        if (!pos.equals(checkedPos) || !from.equals(checkedFrom)) {
+        boolean grip = Grip.inHand();
+        if (!pos.equals(checkedPos) || !from.equals(checkedFrom) || grip != checkedGrip || player.level() != checkedLevel) {
             checkedPos = pos.immutable();
             checkedFrom = from;
+            checkedGrip = grip;
+            checkedLevel = player.level();
             checked = choose(player, pos);
         }
         return checked;

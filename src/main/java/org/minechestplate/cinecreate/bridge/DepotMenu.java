@@ -1,6 +1,7 @@
 package org.minechestplate.cinecreate.bridge;
 
 import com.simibubi.create.AllSoundEvents;
+import com.simibubi.create.content.kinetics.deployer.DeployerBlockEntity;
 import com.simibubi.create.content.kinetics.belt.transport.TransportedItemStack;
 import com.simibubi.create.content.logistics.depot.DepotBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
@@ -9,29 +10,37 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import org.minechestplate.cinecreate.registry.CineMenus;
+import org.minechestplate.cinecreate.station.Composites;
 
 /**
- * The depot: slot 0 is the stack lying on it, slots 1-8 what processing on it has left over (Create's output buffer,
- * take only). Putting down goes through {@link DepotBehaviour} as Create's own right-click does it.
+ * The depot (and the Weighted Ejector's): slot 0 is the stack lying on it, slots 1-8 what processing on it has left over
+ * (Create's output buffer, take only). Putting down goes through {@link DepotBehaviour} as Create's own right-click does.
  */
 public class DepotMenu extends BridgeMenu {
     public static final int MAIN = 0;
+    /**
+     * Button: Create's own click on the hand of a Deployer working this depot from above, with what the scene's hand
+     * carries: they swap, as at the hand-off.
+     */
+    public static final int DEPLOYER_SWAP = 0;
     public static final int OUTPUTS = 8;
     public static final int SLOTS = 1 + OUTPUTS;
     /** Where on the depot a stack set down starts: just short of the middle, so it slides the last pixel. */
     public static final float SET_DOWN_AT = 0.44f;
 
-    /** Server: slots over the depot itself. */
     public DepotMenu(int id, Inventory inventory, BlockPos pos, DepotBehaviour depot) {
         super(CineMenus.DEPOT.get(), id, inventory, pos, SLOTS, 1);
         addSlot(new MainSlot(depot, inventory.player.getDirection()));
@@ -41,7 +50,6 @@ public class DepotMenu extends BridgeMenu {
         addPlayerInventory(inventory, 8, 84);
     }
 
-    /** Client: a plain copy the server keeps in sync. */
     private DepotMenu(int id, Inventory inventory, BlockPos pos) {
         super(CineMenus.DEPOT.get(), id, inventory, pos, SLOTS, 1);
         SimpleContainer copy = new SimpleContainer(SLOTS);
@@ -77,11 +85,19 @@ public class DepotMenu extends BridgeMenu {
                 Component.translatable("cinecreate.menu.depot"));
     }
 
+    @Override
+    public boolean clickMenuButton(Player player, int id) {
+        DeployerBlockEntity deployer = Composites.deployerOver(player.level(), pos);
+        if (id != DEPLOYER_SWAP || deployer == null || !(player instanceof ServerPlayer server) || !player.mayBuild()) {
+            return false;
+        }
+        return Bridge.useWithCarried(server, this, deployer.getBlockPos(), Direction.DOWN, true) != ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+    }
+
     private static int outputX(int i) {
         return 17 + i * 18;
     }
 
-    /** The stack lying on the depot. */
     private static final class MainSlot extends Slot {
         private final DepotBehaviour depot;
         private final Direction from;
@@ -167,7 +183,6 @@ public class DepotMenu extends BridgeMenu {
         }
     }
 
-    /** What processing left on the depot: taken out only. */
     private static final class OutputSlot extends Slot {
         private final DepotBehaviour depot;
         private final int buffer;
@@ -190,7 +205,6 @@ public class DepotMenu extends BridgeMenu {
 
         @Override
         public void set(ItemStack stack) {
-            // only ever emptied: nothing can be put here
             if (stack.isEmpty()) {
                 depot.itemHandler.extractItem(1 + buffer, Integer.MAX_VALUE, false);
             }

@@ -26,9 +26,8 @@ import org.minechestplate.cinecreate.bridge.MillstoneMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
 
 /**
- * The Millstone (DESIGN §7.9). Standing over it, the player pours what is carried into the mouth on top; a few pieces
- * trickle down between the stones. The upper stone turns with the shaft (Create draws that) and flour dust puffs from
- * the gap in time with it. An empty hand reaches to the side and gathers what has been ground.
+ * The Millstone (DESIGN §7.9): what is carried is poured into the mouth on top, flour dust puffs from the gap between
+ * the stones while they grind, and an empty hand gathers what has been ground.
  */
 public class MillstoneScene extends CineStation<MillstoneMenu> {
     /** Pouring: seconds, the beat (the stack goes in). Gathering: seconds, the beat. */
@@ -49,9 +48,9 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
     /** Half the top the cursor can touch. */
     static final double MOUTH = 0.42;
 
-    /** Development only ({@code SmokeTest}): the mouth counts as pointed at while the cursor is somewhere else. */
+    /** Development (SmokeTest): the mouth counts as pointed at wherever the cursor is. */
     public static boolean smokePin;
-    /** Development: pours, gatherings, dust motes puffed. */
+    /** Development (SmokeTest): pours, gatherings, dust motes puffed. */
     public int pours, gathers, puffs;
 
     private final Vec3 top;
@@ -73,7 +72,6 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         return mc.level != null && mc.level.getBlockEntity(pos) instanceof MillstoneBlockEntity millstone ? millstone : null;
     }
 
-    /** The stones turn: the shaft drives them. */
     public boolean turning() {
         MillstoneBlockEntity millstone = millstone();
         return millstone != null && millstone.getSpeed() != 0;
@@ -90,6 +88,21 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
     @Override
     public Vec3 center() {
         return top;
+    }
+
+    @Override
+    public List<Component> spotNames() {
+        return List.of(Component.translatable("cinecreate.layout.spot.mouth"));
+    }
+
+    @Override
+    public Vec3 spotBase(int spot) {
+        return top;
+    }
+
+    /** Where the hand pours (the layout's mouth spot). */
+    private Vec3 mouth() {
+        return spot(0);
     }
 
     @Override
@@ -124,7 +137,6 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         return 45f;
     }
 
-    /** Hands on the near edge of the upper stone. */
     @Override
     protected Vec3 restAt(boolean right) {
         return top.add(side().scale(0.36)).add(right().scale(right ? 0.28 : -0.28)).add(0, 0.05, 0);
@@ -151,16 +163,18 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         if (overPanel) {
             return;
         }
-        Vec3 hit = Picking.cursorOnPlane(top.y);
-        if (hit != null && Math.abs(hit.x - top.x) <= MOUTH && Math.abs(hit.z - top.z) <= MOUTH) {
+        Vec3 mouth = mouth();
+        double half = MOUTH * spotArea(0);
+        Vec3 hit = Picking.cursorOnPlane(mouth.y);
+        if (hit != null && Math.abs(hit.x - mouth.x) <= half && Math.abs(hit.z - mouth.z) <= half) {
             hover();
         }
     }
 
-    /** Development: points at the mouth as the cursor would. */
+    /** Development (SmokeTest): points at the mouth as the cursor would. */
     public void hover() {
         hovered = true;
-        aim = top;
+        aim = mouth();
     }
 
     @Override
@@ -171,7 +185,6 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         }
     }
 
-    /** Where the hand gathers what has been ground: by the gap, on the right. */
     private Vec3 gatherPoint() {
         return top.add(right().scale(0.5)).add(side().scale(0.12)).add(0, -0.3, 0);
     }
@@ -183,13 +196,11 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
             return target.add(0, (carrying ? CARRY : BARE) - 0.02 * tap, 0);
         }
         if (pouring) {
-            // over the mouth, tipped, and away once the last pieces have gone in
             double away = Anim.outCubic(Anim.window(t, PIECES_TO, POUR));
-            return top.add(side().scale(0.05)).add(0, CARRY - 0.04 * Anim.hump(Anim.window(t, 0, POUR_BEAT)) + 0.06 * away, 0);
+            return mouth().add(side().scale(0.05)).add(0, CARRY - 0.04 * Anim.hump(Anim.window(t, 0, POUR_BEAT)) + 0.06 * away, 0);
         }
-        // out to the side, the fingers close by the gap, and back
         double out = Anim.inOutCubic(Anim.window(t, 0, TAKE_BEAT)) - Anim.inOutCubic(Anim.window(t, TAKE_BEAT + 0.05, TAKE));
-        return Anim.lerp(top.add(0, BARE, 0), gatherPoint(), out);
+        return Anim.lerp(mouth().add(0, BARE, 0), gatherPoint(), out);
     }
 
     @Override
@@ -197,17 +208,13 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         return hand.add(0, -0.07, 0);
     }
 
-    /** Held at a slant, tipped over the mouth as it is poured. */
     @Override
     public float heldItemTilt() {
         double t = moveTime();
         return t >= 0 && pouring ? (float) (18 + 60 * Anim.inOutCubic(Anim.window(t, 0, POUR_BEAT))) : 18f;
     }
 
-    /**
-     * Something carried is poured into the mouth (Create's own input decides what the stones will take: a left click
-     * pours the stack, a right click one); an empty hand gathers what has been ground.
-     */
+    /** Create's own input decides what the stones take (a left click pours the stack, a right click one). */
     @Override
     protected void act(int button, boolean shift) {
         MillstoneMenu menu = menu();
@@ -265,7 +272,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
 
     @Override
     protected Vec3 restPoint(int slot) {
-        return top;
+        return mouth();
     }
 
     @Nullable
@@ -282,7 +289,6 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
 
     // ---- the stones at work --------------------------------------------------------------------------
 
-    /** Client tick: flour dust from the gap between the stones, more the faster they turn. */
     @Override
     public void tick() {
         super.tick();
@@ -304,7 +310,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
 
     // ---- drawing -------------------------------------------------------------------------------------
 
-    /** The pieces of a pour, trickling from the tipped hand down into the mouth. (CI calls this twice a frame; it draws once.) */
+    /** The pieces of a pour trickling into the mouth; drawn once a frame (CI calls this twice). */
     @Override
     public void renderScene(PoseStack pose, MultiBufferSource buffers, Camera camera, int light) {
         long frame = FrameCounter.frame();
@@ -316,8 +322,8 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         if (!pouring || t < 0 || poured.isEmpty()) {
             return;
         }
-        Vec3 from = top.add(side().scale(0.05)).add(0, CARRY - 0.08, 0);
-        Vec3 to = top.add(0, -0.2, 0);
+        Vec3 from = mouth().add(side().scale(0.05)).add(0, CARRY - 0.08, 0);
+        Vec3 to = mouth().add(0, -0.2, 0);
         double each = (PIECES_TO - PIECES_FROM) / (PIECES + 1);
         for (int i = 0; i < PIECES; i++) {
             double start = PIECES_FROM + i * each;
@@ -327,12 +333,11 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
             }
             double fall = k * k;
             Vec3 at = Anim.lerp(from, to, fall).add(right().scale(0.03 * Math.sin(i * 2.1)));
-            float size = (float) (PIECE_SIZE * (1 - 0.6 * fall));
+            float size = (float) (PIECE_SIZE * (1 - 0.6 * fall)) * spotSize(0);
             ItemPlacer.drawOriented(pose, buffers, camera.getPosition(), poured, at, Axis.YP.rotationDegrees((float) (i * 70 + k * 200)), size, light);
         }
     }
 
-    /** A warm glow on the mouth; red when the stones will not take what is carried. */
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         MillstoneMenu menu = menu();
@@ -342,11 +347,11 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         ItemStack carried = menu.getCarried();
         boolean ok = carried.isEmpty() ? holdsAnything() : accepts(MillstoneMenu.MOUTH, carried);
         float p = (float) (0.45 + 0.15 * Math.sin(Scene.clock() * 4));
-        EnchantFx.disc(pose, buffers, camera, top.add(0, 0.004, 0), 0.14, 0, EnchantFx.GLOW,
+        EnchantFx.disc(pose, buffers, camera, mouth().add(0, 0.004, 0), 0.14, 0, EnchantFx.GLOW,
                 p, ok ? p * 0.75f : p * 0.2f, ok ? p * 0.45f : p * 0.2f);
     }
 
-    /** Development: what is in the mouth and what has been ground, as the client's millstone has them. */
+    /** Development (SmokeTest): the input and the outputs, as the client's millstone has them. */
     @Nullable
     public ItemStack[] contents() {
         MillstoneBlockEntity millstone = millstone();

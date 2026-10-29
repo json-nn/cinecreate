@@ -19,18 +19,13 @@ import org.minechestplate.cinecreate.bridge.BridgeMenu;
 /**
  * A Create block that gets a Cinematic Interactions scene.
  *
- * @param sceneId   the scene's id, registered with {@code AddonStations} and {@code AddonScenes}
- * @param blockId   the Create block
- * @param menuClass the bridge menu the scene works through
- * @param sides     horizontal sides the player may work from
- * @param usedOn    faces whose right-click starts the scene; any other face keeps Create's use (and block placing)
- * @param menu      opens the bridge menu over the block (null when the block is not ready)
- * @param use       Create's own right-click, for when the scene falls back to it
- * @param kinds     the scenes the block can play, each with its own trigger (a depot: bare, or pressing)
- * @param kindAt    which of them plays at a position; none (null) where the block gets no scene at all (a crafter group
- *                  too big to frame): there every click stays Create's
- * @param bypass    held items whose click on this block stays Create's, besides the common {@code scene_bypass} tag
- *                  (a dye recolours a valve)
+ * @param sides  horizontal sides the player may work from
+ * @param usedOn faces whose right-click starts the scene; any other face keeps Create's use (and block placing)
+ * @param menu   opens the bridge menu (null when the block is not ready)
+ * @param use    Create's own right-click, for when the scene falls back to it
+ * @param kindAt which kind plays at a position; null where the block gets no scene at all (a crafter group too big to
+ *               frame): there every click stays Create's
+ * @param bypass held items whose click stays Create's, besides the {@code scene_bypass} tag (a dye recolours a valve)
  */
 public record SceneBlock(ResourceLocation sceneId, ResourceLocation blockId, Class<? extends BridgeMenu> menuClass,
                          Function<BlockState, List<Direction>> sides, BiPredicate<BlockState, Direction> usedOn,

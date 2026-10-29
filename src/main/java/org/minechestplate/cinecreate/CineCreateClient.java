@@ -20,6 +20,7 @@ import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforge.common.NeoForge;
 import org.minechestplate.cinecreate.bridge.BasinMenu;
+import org.minechestplate.cinecreate.bridge.Bridge;
 import org.minechestplate.cinecreate.bridge.BurnerMenu;
 import org.minechestplate.cinecreate.bridge.CrafterMenu;
 import org.minechestplate.cinecreate.bridge.CrankMenu;
@@ -33,10 +34,11 @@ import org.minechestplate.cinecreate.bridge.ValveMenu;
 import org.minechestplate.cinecreate.client.BridgeScreen;
 import org.minechestplate.cinecreate.client.ClientConfig;
 import org.minechestplate.cinecreate.client.ClientEvents;
-import org.minechestplate.cinecreate.client.Notices;
+import org.minechestplate.cinecreate.client.ClientMode;
 import org.minechestplate.cinecreate.client.WorkKey;
 import org.minechestplate.cinecreate.client.scene.BasinScene;
 import org.minechestplate.cinecreate.client.scene.BurnerScene;
+import org.minechestplate.cinecreate.client.scene.ClientModeStation;
 import org.minechestplate.cinecreate.client.scene.CrafterScene;
 import org.minechestplate.cinecreate.client.scene.CrankScene;
 import org.minechestplate.cinecreate.client.scene.DeployerScene;
@@ -67,6 +69,7 @@ public class CineCreateClient {
         modContainer.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
         // общий код (хук 3, рабочие стороны станции) спрашивает о выборе своего игрока здесь
         ScenePrefs.useOnClient(ClientConfig::trigger, () -> Minecraft.getInstance().isSameThread());
+        Bridge.serverRunsScenes = ClientMode::serverHasAddon;
         // модели захвата (рукоять Create) загружаются вместе с остальными, если созданы до этого
         Grip.loadModels();
         modEventBus.addListener(this::clientSetup);
@@ -75,7 +78,8 @@ public class CineCreateClient {
         modEventBus.addListener(this::registerLayers);
         modEventBus.addListener(ClientConfig::onReload);
         ClientEvents.register(NeoForge.EVENT_BUS);
-        if (SmokeTest.ENABLED) {
+        // не SmokeTest.ENABLED: в выпускном jar класса нет (build.gradle), а чтение его поля загрузило бы класс
+        if (Boolean.getBoolean("cinecreate.smoke")) {
             SmokeTest.register(NeoForge.EVENT_BUS);
         }
     }
@@ -83,46 +87,31 @@ public class CineCreateClient {
     private void clientSetup(FMLClientSetupEvent event) {
         // после общей настройки: сцена регистрируется только для станции, которую уже принял CI
         event.enqueueWork(() -> {
-            if (SceneBlocks.registered(SceneBlocks.DEPOT)) {
-                // у депо под прессом — сцена пресса; что за сцена, решается в момент её начала
-                AddonScenes.register(SceneBlocks.DEPOT.sceneId(), (pos, state, player, side) -> depotScene(player.level(), pos, side));
-            }
+            scene(SceneBlocks.DEPOT, (pos, state, player, side) -> depotScene(player.level(), pos, side));
             for (SceneBlock valve : SceneBlocks.VALVES) {
-                if (SceneBlocks.registered(valve)) {
-                    AddonScenes.register(valve.sceneId(), (pos, state, player, side) -> new ValveScene(pos, side));
-                }
+                scene(valve, (pos, state, player, side) -> new ValveScene(pos, side));
             }
-            if (SceneBlocks.registered(SceneBlocks.BASIN)) {
-                AddonScenes.register(SceneBlocks.BASIN.sceneId(), (pos, state, player, side) -> new BasinScene(pos, side));
-            }
-            if (SceneBlocks.registered(SceneBlocks.BURNER)) {
-                AddonScenes.register(SceneBlocks.BURNER.sceneId(), (pos, state, player, side) -> new BurnerScene(pos, side));
-            }
-            if (SceneBlocks.registered(SceneBlocks.CRANK)) {
-                AddonScenes.register(SceneBlocks.CRANK.sceneId(), (pos, state, player, side) -> new CrankScene(pos, side));
-            }
-            if (SceneBlocks.registered(SceneBlocks.CRAFTER)) {
-                AddonScenes.register(SceneBlocks.CRAFTER.sceneId(), (pos, state, player, side) -> new CrafterScene(pos, side));
-            }
-            if (SceneBlocks.registered(SceneBlocks.DRAIN)) {
-                AddonScenes.register(SceneBlocks.DRAIN.sceneId(), (pos, state, player, side) -> new DrainScene(pos, side));
-            }
-            if (SceneBlocks.registered(SceneBlocks.DEPLOYER)) {
-                AddonScenes.register(SceneBlocks.DEPLOYER.sceneId(), (pos, state, player, side) -> new DeployerScene(pos, side));
-            }
-            if (SceneBlocks.registered(SceneBlocks.MILLSTONE)) {
-                AddonScenes.register(SceneBlocks.MILLSTONE.sceneId(), (pos, state, player, side) -> new MillstoneScene(pos, side));
-            }
-            if (SceneBlocks.registered(SceneBlocks.SAW)) {
-                AddonScenes.register(SceneBlocks.SAW.sceneId(), (pos, state, player, side) -> new SawScene(pos, side));
-            }
-            if (SceneBlocks.registered(SceneBlocks.EJECTOR)) {
-                AddonScenes.register(SceneBlocks.EJECTOR.sceneId(), (pos, state, player, side) -> new EjectorScene(pos, side));
-            }
+            scene(SceneBlocks.BASIN, (pos, state, player, side) -> new BasinScene(pos, side));
+            scene(SceneBlocks.BURNER, (pos, state, player, side) -> new BurnerScene(pos, side));
+            scene(SceneBlocks.CRANK, (pos, state, player, side) -> new CrankScene(pos, side));
+            scene(SceneBlocks.CRAFTER, (pos, state, player, side) -> new CrafterScene(pos, side));
+            scene(SceneBlocks.DRAIN, (pos, state, player, side) -> new DrainScene(pos, side));
+            scene(SceneBlocks.DEPLOYER, (pos, state, player, side) -> new DeployerScene(pos, side));
+            scene(SceneBlocks.MILLSTONE, (pos, state, player, side) -> new MillstoneScene(pos, side));
+            scene(SceneBlocks.SAW, (pos, state, player, side) -> new SawScene(pos, side));
+            scene(SceneBlocks.EJECTOR, (pos, state, player, side) -> new EjectorScene(pos, side));
         });
     }
 
-    /** A depot plays the scene of the machine working it: a press, a spout, a deployer, a fan's stream; or its own. */
+    /** The block's scene, once CI has taken its station; on a server without the add-on, the client-mode scene. */
+    private static void scene(SceneBlock block, AddonScenes.Factory factory) {
+        if (SceneBlocks.registered(block)) {
+            AddonScenes.register(block.sceneId(), (pos, state, player, side) -> ClientMode.active()
+                    ? new ClientModeStation(pos, side, state) : factory.create(pos, state, player, side));
+        }
+    }
+
+    /** A depot plays the scene of the machine working it (press, spout, deployer, fan's stream), chosen as it begins. */
     private static ClientStation depotScene(Level level, BlockPos pos, Direction side) {
         SceneKind kind = SceneBlocks.kindAt(level, pos);
         if (kind == SceneKinds.PRESSING) {
@@ -156,6 +145,5 @@ public class CineCreateClient {
 
     private void registerLayers(RegisterGuiLayersEvent event) {
         event.registerAbove(VanillaGuiLayers.CROSSHAIR, CineCreate.id("invitation"), WorkKey::render);
-        event.registerAboveAll(CineCreate.id("notices"), Notices::render);
     }
 }

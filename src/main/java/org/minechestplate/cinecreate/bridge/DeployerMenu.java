@@ -41,7 +41,6 @@ public class DeployerMenu extends BridgeMenu {
                 Component.translatable("cinecreate.menu.deployer"));
     }
 
-    /** Server: Create's click on the deployer's front (its hand), with the carried item; it swaps them. */
     @Override
     public boolean clickMenuButton(Player player, int id) {
         BlockState state = player.level().getBlockState(pos);
@@ -49,7 +48,7 @@ public class DeployerMenu extends BridgeMenu {
                 || !state.hasProperty(DeployerBlock.FACING) || !player.mayBuild()) {
             return false;
         }
-        return Bridge.useWithCarried(server, this, pos, state.getValue(DeployerBlock.FACING))
+        return Bridge.useWithCarried(server, this, pos, state.getValue(DeployerBlock.FACING), true)
                 != ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
     }
 }

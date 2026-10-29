@@ -26,11 +26,9 @@ import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.ValveMenu;
 
 /**
- * The Valve Handle. The player takes the wheel with both hands, at ten and two. A click turns it by its set angle: the
- * hands ride the rim with Create's own wheel, long turns go hand over hand, and when the wheel stops a soft clunk runs
- * through the camera. The right button turns it back, and the scroll wheel sets the angle; the number floats over the
- * hub. A wheel that is still turning, or a network that something else drives or that is overstressed, will not
- * budge: the hands shake and the hint says why. (DESIGN §7.4)
+ * The Valve Handle (DESIGN §7.4): both hands on the wheel at ten and two; a click turns it by its set angle (the right
+ * button back) and the scroll wheel sets the angle. A wheel still turning, or a network driven by something else or
+ * overstressed, will not budge: the hands shake.
  */
 public class ValveScene extends CineStation<ValveMenu> {
     /** The rim's middle sits 6.5 px out from the face the valve is fixed to; the block's centre is at 8 px. */
@@ -41,18 +39,18 @@ public class ValveScene extends CineStation<ValveMenu> {
     static final double BRACE = 0.01, BRACE_TIME = 0.08;
     /** A hand lets go after this much travel and grips again back at its place, lifting off the rim. */
     static final double REGRIP_AFTER = 90, REGRIP_TIME = 0.15, REGRIP_LIFT = 0.03;
-    /** How far the camera stands from the wheel's centre. */
+    /** The camera from the wheel's centre. */
     static final double CAMERA = 1.2;
-    /** The clunk when the wheel stops. */
+    /** The clunk through the camera when the wheel stops. */
     static final double CLUNK = 0.25, CLUNK_DECAY = 14;
     /** Create's valve: 32 RPM, as degrees per tick. */
     static final double DEGREES_PER_TICK = 32 * 360 / 60.0 / 20.0;
     /** The server's answer to a turn may take this long before the wheel moves; no movement means it refused. */
     static final double ANSWER_WAIT = 0.6;
-    /** A set angle is sent once the scroll wheel has rested this long. */
-    static final double ANGLE_SEND_DELAY = 0.25;
+    /** A set angle is sent once the scroll wheel has rested this long; and shown until the valve has it, at most this long. */
+    static final double ANGLE_SEND_DELAY = 0.25, ANGLE_CONFIRM = 2;
 
-    /** Development ({@code SmokeTest}): turns finished (clunks), and clicks refused. */
+    /** Development (SmokeTest): turns finished (clunks), and clicks refused. */
     public int clunks, denials;
 
     private final Direction facing;
@@ -64,10 +62,10 @@ public class ValveScene extends CineStation<ValveMenu> {
     private boolean turning, started;
     private double clickedAt = -10, clunkAt = -10, turnLength = 0.5;
     private int turnDirection = 1;
-    /** The angle being set with the scroll wheel, not sent yet; when the readout last changed. */
+    /** The angle set with the scroll wheel, not sent yet; the one sent, until Create's sync brings it back. */
     @Nullable
-    private Integer pendingAngle;
-    private double scrolledAt = -10, readoutAt = -10;
+    private Integer pendingAngle, sentAngle;
+    private double scrolledAt = -10, sentAt = -10, readoutAt = -10;
     private double wheelAngle;
     private boolean primed;
 
@@ -81,7 +79,6 @@ public class ValveScene extends CineStation<ValveMenu> {
         axis = Vec3.atLowerCornerOf(Direction.get(Direction.AxisDirection.POSITIVE, facing.getAxis()).getNormal());
     }
 
-    /** One hand on the rim: where on the wheel it holds, and the change of grip under way. */
     private final class Hand {
         final double place;
         /** The wheel's angle when this hand took hold. */
@@ -107,7 +104,6 @@ public class ValveScene extends CineStation<ValveMenu> {
             heldAt = wheelAngle;
         }
 
-        /** Where it holds now: its place on the rim, carried round by the wheel since it took hold. */
         Vec3 grip() {
             Vec3 offset = up().scale(Math.cos(Math.toRadians(place))).add(right().scale(Math.sin(Math.toRadians(place))))
                     .scale(GRIP_RADIUS);
@@ -116,7 +112,7 @@ public class ValveScene extends CineStation<ValveMenu> {
             return hub.add(offset).add(inward).add(front().scale(GRIP_FRONT));
         }
 
-        /** The grip, or on the way to it after letting go (a small lift off the rim, settling with a little overshoot). */
+        /** The grip, or on the way back to it after letting go. */
         Vec3 point() {
             double k = (Scene.clock() - regripAt) / REGRIP_TIME;
             if (k >= 1) {
@@ -135,7 +131,17 @@ public class ValveScene extends CineStation<ValveMenu> {
         return hub;
     }
 
-    /** Out from the wheel's face, toward the player (the side the wheel faces). */
+    @Override
+    public List<Component> spotNames() {
+        return List.of(Component.translatable("cinecreate.layout.spot.readout"));
+    }
+
+    /** Where the angle readout hangs: over the wheel, a little towards the player. */
+    @Override
+    public Vec3 spotBase(int spot) {
+        return hub.add(side().scale(0.06)).add(up().scale(0.18));
+    }
+
     private Vec3 front() {
         return Vec3.atLowerCornerOf(facing.getNormal());
     }
@@ -165,10 +171,7 @@ public class ValveScene extends CineStation<ValveMenu> {
         return facing == Direction.UP;
     }
 
-    /**
-     * In front of the wheel, far enough back that the whole wheel and both hands fit (the 0.8 of DESIGN §7.4 filled the
-     * frame); looking down onto one on the floor, up at one on the ceiling. Leans into a turn.
-     */
+    /** Far enough back that the whole wheel and both hands fit (DESIGN §7.4's 0.8 filled the frame). */
     @Override
     public CameraRig.Pose lean() {
         Vec3 eye = switch (facing) {
@@ -208,7 +211,7 @@ public class ValveScene extends CineStation<ValveMenu> {
         return new Vec3[] {right.point(), left.point()};
     }
 
-    /** The hands hold on: they follow the rim closely, not lazily like hands at rest. */
+    /** The hands follow the rim closely, not lazily like hands at rest. */
     @Override
     public double handsStiffness() {
         return 60;
@@ -253,7 +256,7 @@ public class ValveScene extends CineStation<ValveMenu> {
 
     // ---- interaction ---------------------------------------------------------------------------------
 
-    /** Every click is the wheel's: refused while it turns (CI would just drop it), so the hands can say no. */
+    /** Every click is the wheel's, refused while it cannot turn (CI would just drop it), so the hands can say no. */
     @Override
     public void click(int button, boolean shift) {
         if (menu() == null) {
@@ -310,7 +313,6 @@ public class ValveScene extends CineStation<ValveMenu> {
         }
     }
 
-    /** Client tick: a set angle goes to the server once the scroll wheel rests. */
     @Override
     public void tick() {
         super.tick();
@@ -322,6 +324,8 @@ public class ValveScene extends CineStation<ValveMenu> {
     private void sendAngle() {
         if (pendingAngle != null) {
             buttonClick(ValveMenu.angleButton(pendingAngle));
+            sentAngle = pendingAngle;
+            sentAt = Scene.clock();
             pendingAngle = null;
         }
     }
@@ -334,13 +338,25 @@ public class ValveScene extends CineStation<ValveMenu> {
         }
     }
 
-    /** The angle the next turn uses: being set, or Create's own. */
+    @Override
+    public void devLines(List<String> lines) {
+        lines.add(String.format(java.util.Locale.ROOT, "angle: shown %d · pending %s · sent %s · wheel %.1f", shownAngle(), pendingAngle,
+                sentAngle, wheelAngle));
+    }
+
+    /** The angle the next turn uses: being set, sent and on its way back, or Create's own. */
     public int shownAngle() {
         if (pendingAngle != null) {
             return pendingAngle;
         }
         ValveHandleBlockEntity valve = valve();
-        return valve == null ? 45 : valve.angleInput.getValue();
+        int own = valve == null ? 45 : valve.angleInput.getValue();
+        // отправленный угол — пока синхронизация Create его не вернула (иначе на миг мелькает старый);
+        // сервер отказал — через пару секунд снова свой
+        if (sentAngle != null && (sentAngle == own || Scene.clock() - sentAt > ANGLE_CONFIRM)) {
+            sentAngle = null;
+        }
+        return sentAngle != null ? sentAngle : own;
     }
 
     /** As Create's value box shows it: the direction (⟳ is Create's first row, the negative angles) and the size. */
@@ -350,10 +366,7 @@ public class ValveScene extends CineStation<ValveMenu> {
 
     // ---- the wheel -----------------------------------------------------------------------------------
 
-    /**
-     * Once a frame: the wheel's angle as Create draws it this frame, the hands carried round with it and changing
-     * grip, and the turn's end (the clunk) or the server's refusal.
-     */
+    /** The wheel's angle as Create draws it this frame (the hands ride it), and the turn's end or the server's refusal. */
     @Override
     public void beforeFrame() {
         super.beforeFrame();
@@ -371,7 +384,6 @@ public class ValveScene extends CineStation<ValveMenu> {
             if (valve.inUse > 0) {
                 started = true;
             } else if (started) {
-                // колесо встало: мягкий стук через камеру
                 turning = false;
                 clunks++;
                 clunkAt = Scene.clock();
@@ -386,8 +398,8 @@ public class ValveScene extends CineStation<ValveMenu> {
     }
 
     /**
-     * Hand over hand: a hand that the wheel has carried a quarter turn lets go and takes hold again back at its place,
-     * the trailing one first and one at a time; when the wheel has stopped, both go back to ten and two.
+     * Hand over hand: a hand carried a quarter turn grips again back at its place, the trailing one first and one at a
+     * time; once the wheel stops, both go back to ten and two.
      */
     private void regrip(ValveHandleBlockEntity valve) {
         if (right.regripping() || left.regripping()) {
@@ -405,7 +417,6 @@ public class ValveScene extends CineStation<ValveMenu> {
         }
     }
 
-    /** The hand behind the other in the direction the wheel turns. */
     private Hand trailing() {
         Vec3 a = right.grip().subtract(hub), b = left.grip().subtract(hub);
         boolean rightToLeftIsPositive = a.cross(b).dot(axis) > 0;
@@ -447,7 +458,7 @@ public class ValveScene extends CineStation<ValveMenu> {
         return mc.level != null && mc.level.getBlockEntity(pos) instanceof ValveHandleBlockEntity valve ? valve : null;
     }
 
-    /** Turns {@code v} by {@code radians} about the unit vector {@code k} (right-handed, as Create turns the wheel). */
+    /** Turns v about the unit vector k, right-handed, as Create turns the wheel. */
     static Vec3 rotate(Vec3 v, Vec3 k, double radians) {
         double cos = Math.cos(radians), sin = Math.sin(radians);
         return v.scale(cos).add(k.cross(v).scale(sin)).add(k.scale(k.dot(v) * (1 - cos)));
@@ -459,15 +470,14 @@ public class ValveScene extends CineStation<ValveMenu> {
     public void renderScene(PoseStack pose, MultiBufferSource buffers, Camera camera, int light) {
     }
 
-    /** The angle over the hub, facing the camera; it pops when it changes. */
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
         Component text = angleText(shownAngle());
         double pop = Anim.outBack(Anim.clamp01((Scene.clock() - readoutAt) / 0.25), 1.6);
-        float scale = (float) (0.006 * (0.7 + 0.3 * pop));
-        Vec3 at = hub.add(side().scale(0.06)).add(up().scale(0.18));
+        float scale = (float) (0.006 * spotSize(0) * (0.7 + 0.3 * pop));
+        Vec3 at = spot(0);
         pose.pushPose();
         pose.translate(at.x - camera.x, at.y - camera.y, at.z - camera.z);
         pose.mulPose(mc.gameRenderer.getMainCamera().rotation());

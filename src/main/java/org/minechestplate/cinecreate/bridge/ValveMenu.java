@@ -14,11 +14,10 @@ import org.minechestplate.cinecreate.registry.CineMenus;
 
 /**
  * A Valve Handle: no item slots, only actions, sent as the vanilla menu button packet (as CI's stonecutter and loom
- * send theirs). The server does what Create's own click and value box do: {@link ValveHandleBlockEntity#activate}
- * turns the wheel (and what it drives) by the set angle, or back; the angle is Create's own setting on the block.
+ * send theirs). The server does what Create's own click and value box do: turn by the set angle, or back, and set the
+ * angle (Create's own setting on the block).
  */
 public class ValveMenu extends BridgeMenu {
-    /** Buttons: turn by the set angle, turn back. */
     public static final int TURN = 0, TURN_BACK = 1;
     /** Button {@code ANGLE + 180 + angle} sets the angle (-180..180, not 0), as the value box would. */
     public static final int ANGLE = 1000;

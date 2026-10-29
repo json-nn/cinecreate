@@ -4,9 +4,11 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.dyslexic.cinematic.api.client.AddonMenuStation;
 import dev.dyslexic.cinematic.client.CameraRig;
 import dev.dyslexic.cinematic.client.Hands;
+import dev.dyslexic.cinematic.client.Picking;
 import dev.dyslexic.cinematic.client.Scene;
 import dev.dyslexic.cinematic.station.StationKind;
 import java.util.List;
+import java.util.Locale;
 import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -17,37 +19,29 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.client.FrameCounter;
-import org.minechestplate.cinecreate.client.Notices;
+import org.minechestplate.cinecreate.client.CiNotice;
+import org.minechestplate.cinecreate.client.layout.LayoutPanel;
+import org.minechestplate.cinecreate.client.layout.LayoutScene;
+import org.minechestplate.cinecreate.client.layout.Layouts;
 
 /**
- * Our scenes' common ground: each scene says where its hands go, where it lets the player stand and what it draws, and
- * this adds Create's Extendo Grip to all of them (DESIGN §8.5). With a grip in hand:
- * <ul>
- * <li>a scene is worked from where the player stands, when the work is within the grip's reach ({@link Grip});</li>
- * <li>the hand holding the grip stays by the body, and the grip's claw, at the end of its lattice, goes where the
- * scene sends the hand: it sets down, takes, turns a crank or a valve's wheel ({@link GripArm}). Close to the work,
- * the grip is folded, never shorter than {@link GripArm#FOLDED}: at rest, the fist where the bare hand would be and the
- * claw ahead of it;</li>
- * <li>the claw is drawn from the fist as the hand is drawn (Cinematic Interactions' springs): it comes up with the hand
- * as the scene begins and goes down with it as it ends, and the lattice eases out and in as the work moves;</li>
- * <li>if the grip leaves the hand while the scene needed it (the work out of a bare arm's reach), the scene starts again
- * without it: the player walks up if there is a way, or a card says why not ({@link #gripLost}).</li>
- * </ul>
- * Without a grip, everything is the scene's own.
+ * The base of our scenes: each says where its hands go, where the player stands and what it draws, and this adds
+ * Create's Extendo Grip to all of them (DESIGN §8.5): the hand holding it stays by the body and its claw goes where the
+ * scene sends the hand.
  */
-public abstract class CineStation<M extends AbstractContainerMenu> extends AddonMenuStation<M> {
-    /** The grip's claw this frame for the working hand (set where the scene sends it), at rest, and for both hands at once. */
+public abstract class CineStation<M extends AbstractContainerMenu> extends AddonMenuStation<M> implements LayoutScene {
+    /** The grip's claw this frame for the working hand, at rest, and for both hands at once. */
     @Nullable
     private Vec3 tip, restTip, bothTip;
     /** Where the hand holding the grip was sent for each of them. */
     @Nullable
     private Vec3 workHold, restHold, bothHold;
-    /** Which way the claw points at rest (a hook over an edge), or null: along the grip. */
+    /** Null: the claw points along the grip. */
     @Nullable
     private Vec3 restDir;
     private boolean tipRight = true;
     private long tipFrame = -10;
-    /** The grip as drawn this frame, and the claw from the fist as it eases toward where it is sent. */
+    /** The grip this frame; out: the claw from the fist, easing toward where it is sent. */
     @Nullable
     private Drawn drawn;
     private long drawnFrame = -1;
@@ -58,6 +52,8 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
     private static final double EASE = 14;
     /** Whether the scene was started out of a bare arm's reach, thanks to the grip (decided once it is under way). */
     private boolean decided, fromAfar;
+    /** Where CI would walk the player, as last asked (for the developer view). */
+    private List<Vec3> standSpots = List.of();
 
     protected CineStation(BlockPos pos, Direction side, Class<M> menuType, int inputs) {
         super(pos, side, menuType, inputs);
@@ -65,38 +61,35 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
 
     // ---- what each scene says --------------------------------------------------------------------------
 
-    /** Where the player is walked to, without a grip (Cinematic Interactions' {@code approach}). */
+    /** CI's approach, without a grip. */
     protected abstract List<Vec3> stand(LocalPlayer player);
 
-    /** Whether the work can be done from these feet with bare hands (CI's {@code workable}). */
+    /** CI's workable, with bare hands. */
     protected boolean bareWorkable(Vec3 feet) {
         return super.workable(feet);
     }
 
-    /** Where the working hand goes, for the cursor's target (CI's {@code handTarget}). */
+    /** CI's handTarget. */
     protected abstract Vec3 reach(Vec3 target, Vec3 shoulder, boolean carrying, double tap);
 
-    /** Where the carried stack is drawn, by the hand (CI's {@code heldItemPoint}). */
+    /** CI's heldItemPoint. */
     protected abstract Vec3 carry(Vec3 hand, Vec3 shoulder);
 
-    /** Where a hand rests (CI's {@code rest}). */
+    /** CI's rest. */
     protected abstract Vec3 restAt(boolean right);
 
-    /** Both hands placed by the scene itself (CI's {@code handsOverride}), or null. */
+    /** CI's handsOverride. */
     @Nullable
     protected Vec3[] bothHands() {
         return null;
     }
 
-    /** The scene's drawing in the world (CI's {@code renderWorld}). */
+    /** CI's renderWorld. */
     protected abstract void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light);
 
     // ---- the grip --------------------------------------------------------------------------------------
 
-    /**
-     * Whether, with a grip in hand, the work can be done from these feet: the block within Create's own reach of the grip
-     * (a scene may add its own rules).
-     */
+    /** With a grip in hand: the block within Create's reach of it (a scene may add its own rules). */
     protected boolean gripWorkable(Vec3 feet) {
         return Grip.reaches(feet, pos);
     }
@@ -106,10 +99,7 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
         return !bareWorkable(feet);
     }
 
-    /**
-     * The grip held as a hook rather than a tool (the basin hung from by its rim): it is then on the resting hand, its
-     * tip at {@link #hookPoint()}, and the working hand is bare.
-     */
+    /** The grip held as a hook (the basin's rim): on the resting hand, its claw at hookPoint; the working hand is bare. */
     protected boolean hooked() {
         return false;
     }
@@ -119,42 +109,65 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
         return center();
     }
 
-    /** Which way a hooked grip's claw points: over the edge it holds, away from the player and down. */
+    /** Which way a hooked grip's claw points: over the edge, away from the player and down. */
     protected Vec3 hookReach() {
         return forward().scale(0.55).add(0, -0.83, 0).normalize();
     }
 
-    /** Where the hand holding a hooked grip is: below the hook on the player's side, the grip folded up to it. */
+    /** The fist holding a hooked grip: below the hook on the player's side. */
     protected Vec3 hookHold() {
         return hookPoint().subtract(forward().scale(0.18)).add(0, -0.36, 0);
     }
 
     /** The scene was started out of a bare arm's reach, and the grip has left the hand. */
     protected void gripLost() {
-        Notices.about(pos, Component.translatable("cinecreate.notice.grip_gone"));
+        CiNotice.show(Component.translatable("cinecreate.notice.grip_gone"));
         BlockPos at = pos;
         // заново, без захвата: CI сам проложит путь (или покажет, почему не может)
         Scene.leave();
         Scene.begin(at, StationKind.ADDON);
     }
 
-    /** Whether this scene is being worked out of a bare arm's reach, thanks to the grip. */
     public boolean fromAfar() {
         return fromAfar;
     }
 
+    /**
+     * A seated player cannot be walked up (CI's walk would make no headway and give up): the work is done from the seat
+     * when it can be, else CI refuses and the card says to get up first.
+     */
     @Override
     public final List<Vec3> approach(LocalPlayer player) {
-        // с захватом — оттуда, где стоит, если он дотягивается
-        if (Grip.inHand() && gripWorkable(player.position())) {
+        if (stuck(player) != null || Grip.inHand() && gripWorkable(player.position())) {
             return List.of();
         }
-        return stand(player);
+        standSpots = stand(player);
+        return standSpots;
     }
 
+    /**
+     * Only where the player is when they cannot or need not walk (seated, or with a grip that reaches from there): CI
+     * walks whenever its view check from here fails, even when the work could be done here.
+     */
     @Override
     public final boolean workable(Vec3 feet) {
-        return bareWorkable(feet) || Grip.inHand() && gripWorkable(feet);
+        LocalPlayer player = Minecraft.getInstance().player;
+        String stuck = player == null ? null : stuck(player);
+        if (player != null && Math.hypot(feet.x - player.getX(), feet.z - player.getZ()) > 0.1
+                && (stuck != null || Grip.inHand() && gripWorkable(player.position()))) {
+            return false;
+        }
+        boolean workable = bareWorkable(feet) || Grip.inHand() && gripWorkable(feet);
+        if (!workable && stuck != null) {
+            CiNotice.why(pos, Component.translatable("cinecreate.notice." + stuck));
+        }
+        return workable;
+    }
+
+    /** Why CI cannot walk this player anywhere (seated or flying), or null. */
+    @Nullable
+    private static String stuck(LocalPlayer player) {
+        return player.isPassenger() ? "seated" : player.getAbilities().flying ? "flying" : null;
     }
 
     @Override
@@ -176,7 +189,7 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
 
     @Override
     public final Vec3 handTarget(Vec3 target, Vec3 shoulder, boolean carrying, double tap) {
-        Vec3 want = reach(target, shoulder, carrying, tap);
+        Vec3 want = reach(target, shoulder, carrying, tap).add(right().scale(denyShake()));
         if (!Grip.inHand() || hooked()) {
             tip = null;
             return want;
@@ -188,7 +201,7 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
         return workHold;
     }
 
-    /** What the working hand carries is in the claw, when that hand holds the grip: the scene carries it there. */
+    /** When the working hand holds the grip, what it carries is in the claw. */
     @Override
     public final Vec3 heldItemPoint(Vec3 hand, Vec3 shoulder) {
         Drawn grip = drawn();
@@ -207,7 +220,6 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
         boolean holdsGrip = hooked() ? !right : right == tipRight;
         if (holdsGrip) {
             if (hooked()) {
-                // крюк: кулак ниже края, клешня перехватила край
                 restTip = hookPoint();
                 restDir = hookReach();
                 restHold = hookHold();
@@ -248,11 +260,64 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
     @Override
     public final void renderWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         drawWorld(pose, buffers, camera, light);
+        DevView.drawWorld(this, aim, standSpots, pose, buffers, camera);
+        LayoutPanel.renderWorld(this, pose, buffers, camera);
     }
 
+    // ---- layout spots (developer mode's editor); a scene with none has no editor ----
+
+    @Override
+    public String layoutId() {
+        return getClass().getSimpleName().replace("Scene", "").toLowerCase(Locale.ROOT);
+    }
+
+    @Override
+    public Component layoutTitle() {
+        return Component.translatable("cinecreate.layout." + layoutId());
+    }
+
+    @Override
+    public List<Component> spotNames() {
+        return List.of();
+    }
+
+    @Override
+    public Vec3 spotBase(int spot) {
+        return center();
+    }
+
+    @Override
+    public Vec3 layoutAcross() {
+        return new Vec3(right().x, 0, right().z).normalize();
+    }
+
+    @Override
+    public Vec3 layoutTowards() {
+        return new Vec3(side().x, 0, side().z).normalize();
+    }
+
+    protected final Vec3 spot(int spot) {
+        return Layouts.point(this, spot);
+    }
+
+    protected final float spotSize(int spot) {
+        return Layouts.size(this, spot);
+    }
+
+    protected final double spotArea(int spot) {
+        return Layouts.area(this, spot);
+    }
+
+    protected final double spotTurn(int spot) {
+        return Layouts.rotation(this, spot);
+    }
+
+    /** The scene's own state, as lines for the developer view. */
+    public void devLines(List<String> lines) {}
+
     /**
-     * The grip, with the arms: CI draws them in every phase, the scene's world only while it is under way. So the grip
-     * comes up with the hand holding it and goes down with it, never popping in at the end of the arm.
+     * The grip is drawn with the arms: CI draws them in every phase but the scene's world only while it is under way,
+     * so the grip comes up and goes down with its hand instead of popping in.
      */
     @Override
     public final void renderBody(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
@@ -266,13 +331,9 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
                 at != null ? Grip.forward(at.yaw()) : forward(), light);
     }
 
-    /**
-     * The grip as drawn: the fist holding it (where Cinematic Interactions draws that hand), its claw, the claw's own
-     * direction (null: along the grip), its pose, and whether what the hand carries is in the claw.
-     */
+    /** The fist (where CI draws that hand), the claw, its direction (null: along the grip), and whether it carries. */
     private record Drawn(Vec3 hand, Vec3 claw, @Nullable Vec3 clawDir, GripArm.Claw pose, boolean carries) {}
 
-    /** The grip this frame (worked out once a frame), or null when none is drawn. */
     @Nullable
     private Drawn drawn() {
         long frame = FrameCounter.frame();
@@ -331,20 +392,32 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
         return drawn;
     }
 
-    /** Development: how far the grip's claw is drawn from the fist holding it this frame, or -1 when no grip is drawn. */
+    /** Whether the cursor is within this radius (in the world, at least 9 GUI pixels) of the point on the screen. */
+    protected static boolean underCursor(double[] mouse, Vec3 center, double radius) {
+        double[] at = Picking.toGui(center);
+        double[] edge = Picking.toGui(center.add(0, radius, 0));
+        if (at == null || edge == null) {
+            return false;
+        }
+        DevView.target(center, radius);
+        double r = Math.max(9, Math.hypot(at[0] - edge[0], at[1] - edge[1]));
+        return Math.hypot(mouse[0] - at[0], mouse[1] - at[1]) < r;
+    }
+
+    /** Development (SmokeTest): the claw's distance from the fist this frame, or -1 when no grip is drawn. */
     public double gripLength() {
         Drawn grip = drawn();
         return grip == null ? -1 : grip.claw().distanceTo(grip.hand());
     }
 
-    /** Development: the fist holding the grip and its claw as drawn this frame, or null when no grip is drawn. */
+    /** Development (SmokeTest): the fist and the claw as drawn this frame. */
     @Nullable
     public Vec3[] gripDrawn() {
         Drawn grip = drawn();
         return grip == null ? null : new Vec3[] {grip.hand(), grip.claw()};
     }
 
-    /** The working hand was sent somewhere this frame or the last (the cursor points at the work). */
+    /** The working hand was sent somewhere this frame or the last. */
     private boolean working() {
         return aim != null && tipFrame >= FrameCounter.frame() - 1;
     }

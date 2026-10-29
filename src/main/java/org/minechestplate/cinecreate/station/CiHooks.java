@@ -22,7 +22,7 @@ public final class CiHooks {
             MenuActions.class.getDeclaredMethod("open", ServerPlayer.class, Sessions.Session.class);
             Sessions.class.getDeclaredMethod("openWindow", ServerPlayer.class, BlockPos.class, StationKind.class, int.class);
             StationEvents.class.getDeclaredMethod("onRightClickBlock", PlayerInteractEvent.RightClickBlock.class);
-        } catch (NoSuchMethodException e) {
+        } catch (NoSuchMethodException | LinkageError e) {
             CineCreate.LOGGER.error("[cinecreate] this Cinematic Interactions version changed a method we hook ({}): "
                     + "Create scenes are off, Create's blocks keep their own use", e.getMessage());
             return false;

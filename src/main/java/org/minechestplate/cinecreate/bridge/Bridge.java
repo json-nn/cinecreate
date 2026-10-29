@@ -27,6 +27,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.Tags;
+import java.util.function.BooleanSupplier;
 import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import org.minechestplate.cinecreate.registry.CineTags;
@@ -41,10 +42,21 @@ public final class Bridge {
     private Bridge() {}
 
     private static final double REACH_SQR = 6.0 * 6.0;
+    /**
+     * How far from the player's feet a scene's block can be, to its middle: CI's server lets a scene begin within 6 and
+     * its client sends the start before any walk, so farther (an Extendo Grip reaches 7.5) a scene would be cut off at
+     * once. Beyond this the click is Create's own; a little short of 6, so the two sides agree.
+     */
+    public static final double SCENE_REACH = 5.9;
+
+    /** Client side: whether the server runs our scenes (it has the add-on). Set by the client; a server always runs them. */
+    public static BooleanSupplier serverRunsScenes = () -> true;
+    /** Development only ({@code SmokeTest}): both sides act as on a server without the add-on, to test client mode in one game. */
+    public static volatile boolean devNoAddon;
 
     /**
-     * The scene's menu, instead of {@code MenuActions.open}: the bridge menu, opened with the block position (and what
-     * else the menu needs, {@link BridgeMenu.ExtraData}) as extra data so client and server build the same slots.
+     * Instead of {@code MenuActions.open}: the bridge menu, with the position (and any {@link BridgeMenu.ExtraData}) sent
+     * along so client and server build the same slots.
      */
     public static boolean open(ServerPlayer player, BlockPos pos) {
         Level level = player.level();
@@ -63,9 +75,8 @@ public final class Bridge {
     }
 
     /**
-     * No scene here (the work out of reach, no room, the scene turned off): Create's own right-click happens instead,
-     * as if the player had clicked the block's working face. Replaces {@code Sessions.openWindow}, which would open a
-     * window these blocks do not have.
+     * No scene here (out of reach, no room, turned off): Create's own right-click on the working face instead. Replaces
+     * {@code Sessions.openWindow}, which would open a window these blocks do not have.
      */
     public static void vanillaUse(ServerPlayer player, BlockPos pos) {
         if (Sessions.get(player) != null) {
@@ -90,32 +101,44 @@ public final class Bridge {
     }
 
     /**
-     * Create's own right-click on a face of a block, done with what the scene's cursor carries instead of the held item
-     * (a bucket poured into a basin, fuel fed to a burner, flint and steel struck at one). The carried stack is in the
-     * main hand for the call; what Create leaves in the hand goes back to the cursor, and the hand gets its own item back.
+     * Create's own right-click on a face of a block, done with what the scene's cursor carries: the carried stack is in
+     * the main hand for the call, and what Create leaves there goes back to the cursor. With nothing carried (an empty
+     * hand taking everything out), what Create puts into the emptied hand goes into the inventory instead, as Create's
+     * own empty-handed click leaves it.
      */
     public static ItemInteractionResult useWithCarried(ServerPlayer player, AbstractContainerMenu menu, BlockPos pos, Direction face) {
+        return useWithCarried(player, menu, pos, face, false);
+    }
+
+    /** The same; {@code intoHand}: what an empty hand gets is the cursor's (the deployer's hand swaps into the scene's). */
+    public static ItemInteractionResult useWithCarried(ServerPlayer player, AbstractContainerMenu menu, BlockPos pos, Direction face,
+                                                       boolean intoHand) {
         Level level = player.level();
         BlockState state = level.getBlockState(pos);
         ItemStack own = player.getMainHandItem();
         ItemStack carried = menu.getCarried();
         BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos).add(Vec3.atLowerCornerOf(face.getNormal()).scale(0.5)),
                 face, pos, false);
+        boolean empty = carried.isEmpty();
         player.setItemInHand(InteractionHand.MAIN_HAND, carried);
         try {
             return state.useItemOn(carried, level, player, InteractionHand.MAIN_HAND, hit);
         } finally {
-            menu.setCarried(player.getMainHandItem());
+            ItemStack left = player.getMainHandItem();
             player.setItemInHand(InteractionHand.MAIN_HAND, own);
+            if (empty && !intoHand && !left.isEmpty()) {
+                // Create положил взятое в пустой на время слот: в инвентарь, а не в руку сцены
+                player.getInventory().placeItemBackInInventory(left);
+            } else {
+                menu.setCarried(left);
+            }
         }
     }
 
     /**
-     * Clicks Cinematic Interactions must leave alone (decided the same way on both sides): one of Create's value boxes
-     * ({@link #onValueBox}: a filter, a stack size, the valve's angle...), the player starts this scene on the key or
-     * not at all ({@link ScenePrefs}), an item with its own Create interaction (the wrench, goggles, filters..., and per
-     * block: a dye on a valve), a face of the block that is not worked (a block placed against a depot's side), or a
-     * block that has no scene where it stands (a crafter group bigger than 5×5).
+     * Clicks Cinematic Interactions must leave alone, decided the same way on both sides: Create's value boxes, scenes
+     * started on the key or not at all, items with their own Create interaction (and per block: a dye on a valve), faces
+     * that are not worked, and blocks with no scene where they stand (a crafter group bigger than 10×10).
      */
     public static boolean leaveToCreate(PlayerInteractEvent.RightClickBlock event) {
         BlockState state = event.getLevel().getBlockState(event.getPos());
@@ -123,11 +146,15 @@ public final class Bridge {
         if (scene == null) {
             return false;
         }
-        if (onValueBox(event.getLevel(), event.getPos(), event.getEntity(), event.getHitVec())) {
+        // сервер без дополнения: сцен там нет, клик — за Create (сцену режима клиента начинает само нажатие: ClientMode)
+        if (devNoAddon || event.getLevel().isClientSide() && !serverRunsScenes.getAsBoolean()) {
+            return true;
+        }
+        if (onValueBox(event.getLevel(), event.getPos(), event.getEntity(), event.getHitVec()) || beyondScenes(event.getEntity(), event.getPos())) {
             return true;
         }
         // KEY и OFF: правый клик целиком за Create (клиент смотрит в свой конфиг, сервер — в присланный им);
-        // и там, где сцены нет вовсе (группа крафтеров больше 5×5)
+        // и там, где сцены нет вовсе (группа крафтеров больше 10×10)
         SceneKind kind = scene.kindAt().at(event.getLevel(), event.getPos());
         if (kind == null || ScenePrefs.of(event.getEntity(), kind) != Trigger.USE) {
             return true;
@@ -141,10 +168,9 @@ public final class Bridge {
 
     /**
      * HIGH priority, both sides: a click on a machine working one of our blocks (a press: the depot under it) starts
-     * that block's scene, the way Cinematic Interactions starts its own stations (cancelled on both sides, the client
-     * begins the scene); CI's own handler would not, since the machine is not one of its stations. A block in hand is
-     * still placed against the machine (a shaft against the press), and the machine's own value boxes (a deployer's
-     * filter) stay Create's. Everything on our blocks themselves goes through CI's own handler and {@link #leaveToCreate}.
+     * that block's scene as CI starts its own stations; CI's handler would not, the machine is not a station. A block
+     * in hand is still placed against the machine, and its value boxes stay Create's. Clicks on our blocks themselves go
+     * through CI's handler and {@link #leaveToCreate}.
      */
     public static void onUse(PlayerInteractEvent.RightClickBlock event) {
         Level level = event.getLevel();
@@ -155,6 +181,9 @@ public final class Bridge {
         }
         BlockPos clicked = event.getPos();
         ItemStack held = event.getItemStack();
+        if (devNoAddon || level.isClientSide() && !serverRunsScenes.getAsBoolean()) {
+            return;
+        }
         BlockPos target = Composites.workedBy(level, clicked);
         if (target == null || held.getItem() instanceof BlockItem || onValueBox(level, clicked, player, event.getHitVec())) {
             return;
@@ -162,7 +191,7 @@ public final class Bridge {
         BlockState state = level.getBlockState(target);
         SceneBlock scene = SceneBlocks.of(state);
         SceneKind kind = scene == null ? null : scene.kindAt().at(level, target);
-        if (kind == null || held.is(CineTags.SCENE_BYPASS) || scene.bypass().test(held)
+        if (kind == null || held.is(CineTags.SCENE_BYPASS) || scene.bypass().test(held) || beyondScenes(player, target)
                 || !StationKind.ADDON.usable(level, target, state) || ScenePrefs.of(player, kind) != Trigger.USE) {
             return;
         }
@@ -175,10 +204,34 @@ public final class Bridge {
     }
 
     /**
-     * Whether Create's own input takes this click: it lands on one of the block's value boxes (any value setting: a
-     * stack size, a speed, the valve's angle; a filter, also a sided one) or on a redstone-link frequency slot. Decided
-     * as Create's {@code ValueSettingsInputHandler} and {@code LinkHandler} decide it, on either side, so the box gets
-     * the click whatever the order the handlers run in, on every block, ours or a machine working one of ours.
+     * Client mode: whether this click would start a scene where the server has the add-on (one of our blocks or a machine
+     * working one, its trigger a right-click, nothing in hand that Create handles itself).
+     */
+    public static boolean clientModeStarts(Level level, Player player, BlockHitResult hit) {
+        BlockPos clicked = hit.getBlockPos();
+        BlockPos target = SceneBlocks.target(level, clicked);
+        ItemStack held = player.getMainHandItem();
+        if (target == null || player.isSecondaryUseActive() || player.isSpectator() || beyondScenes(player, target)
+                || onValueBox(level, clicked, player, hit)) {
+            return false;
+        }
+        SceneBlock scene = SceneBlocks.of(level.getBlockState(target));
+        SceneKind kind = scene == null ? null : scene.kindAt().at(level, target);
+        if (kind == null || ScenePrefs.of(player, kind) != Trigger.USE || held.is(CineTags.SCENE_BYPASS) || scene.bypass().test(held)) {
+            return false;
+        }
+        boolean machine = !target.equals(clicked);
+        return machine ? !(held.getItem() instanceof BlockItem) : scene.usedOn().test(level.getBlockState(target), hit.getDirection());
+    }
+
+    public static boolean beyondScenes(Player player, BlockPos pos) {
+        return player.position().distanceToSqr(Vec3.atCenterOf(pos)) > SCENE_REACH * SCENE_REACH;
+    }
+
+    /**
+     * Whether Create's own input takes this click: one of the block's value boxes (a stack size, the valve's angle, a
+     * filter...) or a redstone-link frequency slot. Decided as Create's {@code ValueSettingsInputHandler} and
+     * {@code LinkHandler} decide it, on either side, so the box gets the click whatever order the handlers run in.
      */
     public static boolean onValueBox(Level level, BlockPos pos, Player player, BlockHitResult hit) {
         if (hit == null || !ValueSettingsInputHandler.canInteract(player) || !(level.getBlockEntity(pos) instanceof SmartBlockEntity be)) {

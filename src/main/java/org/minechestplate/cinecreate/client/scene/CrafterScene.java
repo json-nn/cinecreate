@@ -45,27 +45,15 @@ import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 import org.minechestplate.cinecreate.bridge.CrafterMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
-import org.minechestplate.cinecreate.client.Notices;
+import org.minechestplate.cinecreate.client.CiNotice;
 import org.minechestplate.cinecreate.station.CrafterGroup;
 import org.minechestplate.cinecreate.station.Crafters;
 
 /**
- * Mechanical Crafters (DESIGN §7.3). The crafters stand as a wall of windows, seen from the player's own eyes: the
- * camera never leaves the head (after M7, the user's note: large walls looked like flying).
- * <ul>
- * <li>By hand, a group up to 3×3 within the player's height: the player steps back until the whole group is in frame
- * (crouching for a low one). Within arm's reach the hand carries an item in and pushes it into the slot; a farther
- * window gets a short toss.</li>
- * <li>With an Extendo Grip in hand, any group up to 10×10, and only so: the player stands where they reach the clicked
- * crafter, and the wall is seen a section at a time (up to 3×3 windows); the head turns from section to section (keys,
- * the wheel, or the cursor resting at a screen edge), and a small map shows where on the wall it looks. The grip's hand
- * puts items into every window within Create's own reach of the grip; the others are shaded and refused (stand closer,
- * or higher).</li>
- * </ul>
- * An empty hand takes an item back out, a Slot Cover in hand covers an empty window, and an empty hand takes the cover
- * off again. Faint lights run across each front the way its items will travel. When the last window is filled and the
- * crafters turn, the view widens a little and watches: the items hop from crafter to crafter (Create draws that), and
- * when the result forms, the output window flashes.
+ * Mechanical Crafters (DESIGN §7.3): a wall of windows seen from the player's own eyes (the camera never leaves the
+ * head: on a large wall a free camera felt like flying). By hand, a group up to 3×3, stepped back from until it is all
+ * in frame; a window out of arm's reach gets a toss. With an Extendo Grip, any group up to 10×10 and only so, seen a
+ * section (up to 3×3) at a time; windows out of the grip's reach are refused.
  */
 public class CrafterScene extends CineStation<CrafterMenu> {
     /** A hand reaches this far from its shoulder; a farther window gets a toss. */
@@ -102,8 +90,8 @@ public class CrafterScene extends CineStation<CrafterMenu> {
      */
     static final double FOV = 62, FOV_PER_SIZE = 4, FRAMING_FOV = 84, MAX_FOV = 90;
     /**
-     * Cinematic Interactions' inventory drawer along the top of the screen and its hint line along the bottom, in GUI
-     * pixels: the windows (with this much room round each) stay clear of them, only the group's edges may go under.
+     * CI's inventory drawer at the top of the screen and its hint line at the bottom (GUI pixels): the windows, with
+     * this much room round each, stay clear of them; only the group's edges may go under.
      */
     static final double DRAWER = 46, HINT_LINE = 24, WINDOW_ROOM = 0.05;
     /** An item just put in is drawn until Create draws it (one sync), at most this long; it settles in over the first part. */
@@ -118,9 +106,9 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     static final double FLASH = 0.06, FLASH_DECAY = 9;
     static final int FLASH_COLOR = 0xFFF2C8;
 
-    /** Development only ({@code SmokeTest}): the window the cursor is held on (-1: the cursor decides). */
+    /** Development (SmokeTest): the window the cursor is held on (-1: the cursor decides). */
     public static int smokePin = -1;
-    /** Development: windows filled by hand and by toss, things taken out, clicks refused, results formed. */
+    /** Development (SmokeTest): windows filled by hand and by toss, things taken out, clicks refused, results formed. */
     public int inserts, tosses, takes, denials, crafts;
 
     private final CrafterGroup group;
@@ -129,12 +117,11 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     /** By hand: how far back the player stands to have the whole group in view. */
     private final double distance;
     /**
-     * How far above what is looked at the view's middle is, as a share of the half-height it sees there: the windows
-     * sit in the band between the drawer and the hint line, not in the middle of the screen. The band's share of the
-     * screen's height, and the screen's shape.
+     * How far above what is looked at the view's middle is (a share of the half-height seen there), so the windows sit
+     * between the drawer and the hint line; that band's share of the screen's height; the screen's shape.
      */
     private final double rise, band, aspect;
-    /** Worked with an Extendo Grip (decided when the scene starts; DESIGN §7.3, after M7). */
+    /** Decided when the scene starts. */
     private final boolean gripMode;
     /** With the grip: each section's first column and first row, and the section looked at. */
     private final int[] sectionColumns, sectionRows;
@@ -153,7 +140,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
 
     private enum Move { PUT, TAKE }
 
-    /** The move under way (see {@code moving()}): what, at which window, and how. */
     private Move move = Move.PUT;
     private int moveCell = -1;
     private boolean far, covering, uncovering, lastOne, released;
@@ -164,7 +150,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     /** Any crafter of the group at work (Create's phase is not idle), and the camera's way there and back (0..1). */
     private boolean watching;
     private double watch;
-    /** Each crafter's phase and countdown at the last tick. */
     private final String[] phases;
     private final int[] countDowns;
     private double craftedAt = -10;
@@ -200,12 +185,12 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         // с захватом: стена по частям, начиная с той, где кликнутый сборщик
         sectionColumns = starts(group.width());
         sectionRows = starts(group.height());
-        int clicked = Math.max(0, group.cells().indexOf(pos));
-        sectionColumn = nearest(sectionColumns, clicked % group.width(), group.width());
-        sectionRow = nearest(sectionRows, clicked / group.width(), group.height());
+        BlockPos clicked = group.cells().contains(pos) ? pos : group.cells().get(0);
+        sectionColumn = nearest(sectionColumns, group.column(clicked), group.width());
+        sectionRow = nearest(sectionRows, group.row(clicked), group.height());
     }
 
-    /** The sections' first indices along a side of this many windows: up to {@link #SECTION} each, spread evenly, overlapping. */
+    /** The sections' first indices along a side of this many windows: up to SECTION each, spread evenly, overlapping. */
     private static int[] starts(int windows) {
         if (windows <= SECTION) {
             return new int[] {0};
@@ -218,7 +203,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return starts;
     }
 
-    /** The section whose middle is nearest this window. */
     private static int nearest(int[] starts, int window, int windows) {
         int best = 0;
         for (int i = 1; i < starts.length; i++) {
@@ -232,8 +216,8 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     }
 
     /**
-     * The tangent of half the field of view that frames this many rows and columns of windows (and a margin round them)
-     * from a block away, with the windows in the band between the drawer and the hint line: divide by the distance.
+     * The tangent of half the field of view that frames these windows (and a margin) from a block away, the windows in
+     * the band between the drawer and the hint line: divide by the distance.
      */
     private double frameTan(int rows, int columns) {
         double margin = MARGIN + MARGIN_PER_SIZE * (Math.max(rows, columns) - 1);
@@ -242,12 +226,11 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return Math.max(edges, windows / band);
     }
 
-    /** The field of view that frames them from this far. */
     private double fovFor(int rows, int columns, double far) {
         return Mth.clamp(2 * Math.toDegrees(Math.atan(frameTan(rows, columns) / Math.max(0.3, far))), MIN_FOV, MAX_FOV);
     }
 
-    /** How far back from the group the camera can stand before a block is in the way (at most {@code wanted}). */
+    /** How far back from the group the camera can stand before a block is in the way (at most wanted). */
     private double room(Minecraft mc, double wanted) {
         if (mc.level == null || mc.player == null) {
             return wanted;
@@ -279,27 +262,21 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return false;
     }
 
-    /** The view is the player's own: never away from the head (no free camera). */
     @Override
     public boolean freeCamera() {
         return false;
     }
 
-    /** Low groups are worked crouching. */
     @Override
     public boolean crouches() {
         return true;
     }
 
-    /** Small enough to be worked by hand. */
     private boolean small() {
         return group.width() <= BARE_MOST && group.height() <= BARE_MOST;
     }
 
-    /**
-     * By hand: a group up to 3×3, in front of it, no more than a step beyond its sides, from its bottom row up to a
-     * little above the eyes. A bigger or higher one is the grip's (its card says so).
-     */
+    /** By hand: a group up to 3×3, in front of it, from its bottom row up to a little above the eyes. */
     @Override
     protected boolean bareWorkable(Vec3 feet) {
         if (!small()) {
@@ -312,7 +289,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
             // за стеной (она и не даёт отойти): карточка назовёт её
             BlockPos wall = along < 0.3 ? null : Views.blocking(feet.add(0, Views.EYE, 0), middle.add(side().scale(0.05)), new HashSet<>(group.cells()));
             if (wall != null) {
-                Notices.why(pos, Component.translatable("cinecreate.notice.covered", Minecraft.getInstance().level.getBlockState(wall).getBlock().getName()));
+                CiNotice.why(pos, Component.translatable("cinematic.notice.covered", Minecraft.getInstance().level.getBlockState(wall).getBlock().getName()));
                 return false;
             }
             return refuse(along < 0.3 ? "wrong_side" : "too_far");
@@ -327,35 +304,27 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return true;
     }
 
-    /**
-     * With the grip: in front of the wall (a little beyond its sides too), not standing above its bottom row, and the
-     * clicked crafter within Create's reach of the grip from these feet.
-     */
+    /** With the grip: in front of the wall, not above its bottom row, the clicked crafter within the grip's reach. */
     @Override
     protected boolean gripWorkable(Vec3 feet) {
-        Vec3 off = feet.subtract(middle);
-        double along = off.dot(side()), aside = Math.abs(off.dot(right()));
-        if (along < 0.3 || aside > group.width() / 2.0 + 2.5) {
-            return refuse(along < 0.3 ? "wrong_side" : "too_far");
-        }
-        if (middle.y - group.height() / 2.0 - feet.y < -1.5) {
-            return refuse("too_low");
+        if (feet.subtract(middle).dot(side()) < 0.3) {
+            return refuse("wrong_side");
         }
         return Grip.reaches(feet, pos) || refuse("too_far");
     }
 
-    /** Started with the grip, the scene needs it throughout (it is put away: the scene starts again, by hand if it can). */
+    /** Started with the grip, the scene needs it throughout (put away, the scene starts again, by hand if it can). */
     @Override
     protected boolean needsGrip(Vec3 feet) {
         return gripMode;
     }
 
     private boolean refuse(String why) {
-        Notices.why(pos, Component.translatable("cinecreate.notice." + why));
+        CiNotice.why(pos, Component.translatable((why.equals("too_big") ? "cinecreate.notice." : "cinematic.notice.") + why));
         return false;
     }
 
-    /** By hand, the middle and the group's corners (all in view); with the grip, the first section's. */
+    /** For CI's view check: by hand, the middle and the group's corners; with the grip, the section's. */
     @Override
     public List<Vec3> workSamples() {
         Vec3 out = side().scale(0.04);
@@ -366,7 +335,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
                 group.point(left, bottom).add(out), group.point(right, bottom).add(out));
     }
 
-    /** By hand, back far enough to see the whole group; with the grip, before the clicked crafter. */
     @Override
     protected List<Vec3> stand(LocalPlayer player) {
         Vec3 stand = gripMode ? group.window(pos).add(side().scale(GRIP_STAND)) : middle.add(side().scale(distance));
@@ -376,7 +344,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return walk ? List.of(stand) : List.of();
     }
 
-    /** The player's eyes, crouched for a low group. */
     private Vec3 eye() {
         LocalPlayer player = Minecraft.getInstance().player;
         Vec3 feet = player == null ? middle.add(side().scale(distance)) : player.position();
@@ -385,7 +352,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return feet.add(0, low ? Views.CROUCHED_EYE : Views.EYE, 0);
     }
 
-    /** The middle of the section looked at (by hand: of the whole group). */
     private Vec3 sectionMiddle() {
         if (!gripMode) {
             return middle;
@@ -394,10 +360,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return group.point(sectionColumns[sectionColumn] + (columns - 1) / 2.0, sectionRows[sectionRow] + (rows - 1) / 2.0);
     }
 
-    /**
-     * From the player's eyes: by hand at the whole group, with the grip at the section looked at, a little above its
-     * middle so it sits between the drawer and the hint line. A turn between sections swings the head over.
-     */
+    /** From the player's eyes, a little above the middle so the windows sit between the drawer and the hint line. */
     @Override
     public CameraRig.Pose lean() {
         Vec3 eye = eye();
@@ -430,7 +393,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return 10f;
     }
 
-    /** Hands low before the body, ready; they sink while the crafters work. */
     @Override
     protected Vec3 restAt(boolean right) {
         return eye().add(forward().scale(0.5)).add(right().scale(right ? 0.24 : -0.24))
@@ -464,10 +426,19 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return true;
     }
 
-    /** W/A/S/D and the arrows turn the head (with the grip). */
+    @Override
+    public void devLines(List<String> lines) {
+        lines.add(String.format(java.util.Locale.ROOT, "grid %d×%d · section %d,%d of %d×%d · grip mode %s · hovered %d", group.width(),
+                group.height(), sectionColumn, sectionRow, sectionColumns.length, sectionRows.length, gripMode, hovered));
+    }
+
+    /**
+     * W/A/S/D and the arrows turn the head on a wall of more than one section, and keep the scene even at its edge;
+     * with one section they are CI's and walk away.
+     */
     @Override
     public boolean keyPressed(int key) {
-        if (!gripMode) {
+        if (!gripMode || sectionColumns.length * sectionRows.length <= 1) {
             return false;
         }
         return switch (key) {
@@ -479,7 +450,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         };
     }
 
-    /** The wheel turns the head up and down (with Shift: along the wall). */
     @Override
     public void scroll(double delta) {
         if (gripMode && delta != 0) {
@@ -492,14 +462,15 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         }
     }
 
-    /** Whether the player, where they stand, reaches this window with the grip (Create's reach; by hand everything is, by toss). */
+    /** With the grip, Create's reach from where the player stands; by hand everything is (by toss). */
     private boolean inReach(int cell) {
         return !gripMode || Grip.reachesNow(group.cells().get(cell));
     }
 
-    /** The section the window is in, by the nearest middle (several sections overlap). */
+    /** Whether the window is in the section looked at (sections overlap). */
     private boolean inSection(int cell) {
-        int column = cell % group.width(), row = cell / group.width();
+        BlockPos at = group.cells().get(cell);
+        int column = group.column(at), row = group.row(at);
         int c0 = sectionColumns[sectionColumn], r0 = sectionRows[sectionRow];
         return column >= c0 && column < c0 + SECTION && row >= r0 && row < r0 + SECTION;
     }
@@ -517,7 +488,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
 
     // ---- interaction ---------------------------------------------------------------------------------
 
-    /** The window under the cursor: the front it points at, read off the plane of the fronts. */
     @Override
     public void updateCursor(boolean overPanel) {
         if (moving()) {
@@ -546,13 +516,12 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         }
     }
 
-    /** Development: points at a window as the cursor would. */
+    /** Development (SmokeTest): points at a window as the cursor would. */
     public void hover(int cell) {
         hovered = cell;
         aim = group.window(group.cells().get(cell));
     }
 
-    /** The cursor leaving does not stop a move half way, nor take the hand off a pinned window. */
     @Override
     public void clearCursor() {
         if (!moving() && smokePin < 0) {
@@ -577,7 +546,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
                 double in = Anim.inOutCubic(Anim.window(t, 0.25, 0.37)) - Anim.outCubic(Anim.window(t, 0.37, INSERT));
                 return target.add(side().scale(CARRY - PUSH * in));
             }
-            // замах назад, бросок вперёд, рука успокаивается
             double back = Anim.outCubic(Anim.window(t, 0, RELEASE * 0.8)) * (1 - Anim.window(t, RELEASE * 0.8, RELEASE));
             double flick = Anim.hump(Anim.window(t, RELEASE * 0.8, RELEASE + 0.16));
             return ready.add(dir.scale(-0.06 * back + 0.12 * flick)).add(0, 0.03 * back, 0);
@@ -588,8 +556,8 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     }
 
     /**
-     * Held in front of the fist, toward the windows. During a toss the last item of a stack flies along the arc itself
-     * (with more in hand, the scene draws the one flying); a taken item comes out of its window to the hand.
+     * During a toss the last of a stack flies itself (with more in hand, renderScene draws the one flying); a taken item
+     * comes out of its window to the hand.
      */
     @Override
     protected Vec3 carry(Vec3 hand, Vec3 shoulder) {
@@ -619,7 +587,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return t >= RELEASE && move == Move.PUT && far && lastOne ? spin(t) : HELD_TILT;
     }
 
-    /** Where a tossed item is: from the hand to its window along an arc. */
     private Vec3 flight(double t) {
         Vec3 to = group.window(group.cells().get(moveCell));
         Vec3 from = releaseFrom != null ? releaseFrom : to;
@@ -649,10 +616,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         act(button, shift);
     }
 
-    /**
-     * A window, as Create's own click on it: something in hand goes in (a Slot Cover covers instead), an empty hand
-     * takes out what is there, or the cover. A window that is full, covered or refuses the item: the hands shake.
-     */
+    /** As Create's own click on a window: what is carried goes in (a Slot Cover covers), an empty hand takes it out. */
     @Override
     protected void act(int button, boolean shift) {
         int index = hovered < 0 ? -1 : slotIndex(hovered);
@@ -664,7 +628,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         if (!inReach(hovered)) {
             // захват туда не достаёт: как и клик в Create, отсюда никак
             refuse();
-            Notices.about(pos, Component.translatable("cinecreate.notice.out_of_reach"));
+            CiNotice.show(Component.translatable("cinecreate.notice.out_of_reach"));
             return;
         }
         ItemStack carried = menu.getCarried();
@@ -761,24 +725,21 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     }
 
     /**
-     * Whether the working hand cannot reach this window (Cinematic Interactions works with the left hand left of the
-     * middle): then it is tossed to. Never with the grip: its hand puts items in, and windows out of its reach refuse.
+     * By hand only: the working hand (CI works with the left one left of the middle) cannot reach the window, which is
+     * then tossed to.
      */
     private boolean beyondReach(int cell) {
         Vec3 window = group.window(group.cells().get(cell));
         return !gripMode && window.distanceTo(shoulder(lateral(window) >= -0.1)) > REACH;
     }
 
-    /** Where Cinematic Interactions hangs an arm: off the camera, as its hands do it. */
+    /** Where CI hangs an arm off the camera (as Grip.shoulder). */
     private static Vec3 shoulder(boolean right) {
         Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
-        double yaw = Math.toRadians(camera.getYRot());
-        Vec3 forward = new Vec3(-Math.sin(yaw), 0, Math.cos(yaw));
-        Vec3 across = new Vec3(-forward.z, 0, forward.x);
-        return camera.getPosition().add(across.scale(right ? 0.38 : -0.38)).add(0, -0.46, 0).add(forward.scale(0.08));
+        return Grip.shoulder(right, camera.getPosition(), camera.getYRot());
     }
 
-    /** A click on the menu right now (the move's beat: {@code slotClick} waits for the move to end). */
+    /** A click on the menu right now, at the move's beat (CI's slotClick would wait for the move to end). */
     private void click(int slot, int button, ClickType type) {
         Minecraft mc = Minecraft.getInstance();
         CrafterMenu menu = menu();
@@ -852,8 +813,8 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     // ---- the watch -----------------------------------------------------------------------------------
 
     /**
-     * Client tick: whether the crafters are at work (Create's phase), and the moment the result forms: Create's
-     * crafting countdown passing its middle, when the server plays {@code crafter_craft}.
+     * Whether the crafters are at work (Create's phase), and the moment the result forms: the crafting countdown passing
+     * its middle, when the server plays crafter_craft.
      */
     @Override
     public void tick() {
@@ -884,7 +845,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         Fx.motes(group.window(group.cells().get(cell)), 0.15, 16, 1f, 0.95f, 0.78f, 0.25);
     }
 
-    /** Once a frame: the camera's way back and forth for the watch, and the soft whoosh of a toss leaving the hand. */
     @Override
     public void beforeFrame() {
         super.beforeFrame();
@@ -900,10 +860,10 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         }
     }
 
-    /** The cursor resting at a screen edge (with the grip) turns the head that way after a moment, and on while it stays. */
+    /** With the grip, the cursor resting at a screen edge turns the head that way after a moment, and on while it stays. */
     private void dwell() {
         int dx = 0, dy = 0;
-        if (gripMode && !moving() && !watching && smokePin < 0) {
+        if (gripMode && Scene.phase == Scene.Phase.ACTIVE && !moving() && !watching && smokePin < 0) {
             Window window = Minecraft.getInstance().getWindow();
             double[] mouse = Picking.mouseGui();
             double width = window.getGuiScaledWidth(), height = window.getGuiScaledHeight();
@@ -947,7 +907,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
 
     /**
      * A tossed item while the rest of the stack stays in hand, and an item just put in until Create draws it (the
-     * client's slot has it at once, Create's crafter once the server sends it). Drawn once a frame.
+     * client's slot has it at once, Create's crafter once the server sends it). Once a frame: CI calls this twice.
      */
     @Override
     public void renderScene(PoseStack pose, MultiBufferSource buffers, Camera camera, int light) {
@@ -990,10 +950,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         pose.popPose();
     }
 
-    /**
-     * Faint lights run across each front the way its items will travel (fading out while the crafters work), and the
-     * window under the cursor glows: warm when the click will do something, red when it will be refused.
-     */
+    /** Faint lights run across each front the way its items will travel. */
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         Minecraft mc = Minecraft.getInstance();
@@ -1016,7 +973,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
             Vec3 at = group.face(cell).add(out.scale(LIGHT_OUT)).add(toward.scale(0.1 + 0.3 * run));
             Fx.facePatch(pose, buffers, camera, at, across, up, 0.045, glow, glow * 0.78f, glow * 0.48f);
         }
-        // с захватом: окна вне досягаемости притушены
         for (int i = 0; gripMode && i < group.cells().size(); i++) {
             if (!inReach(i)) {
                 Fx.facePatch(pose, buffers, camera, group.window(group.cells().get(i)).add(out.scale(0.012)), across, up, WINDOW * 0.6,
@@ -1033,9 +989,8 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     }
 
     /**
-     * With the grip, on a wall of more than one section: a small map at the right edge (each window a dot: filled brass,
-     * covered grey, empty dark, out of reach red; the section looked at framed), and a faint arrow at each edge the head
-     * can turn to, filling while the cursor rests there.
+     * With the grip, on a wall of more than one section: a small map of the wall (the section looked at framed), and an
+     * arrow at each edge the head can turn to.
      */
     @Override
     public void renderScreen(GuiGraphics g, Font font, float alpha) {
@@ -1048,7 +1003,8 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         int x0 = g.guiWidth() - w - 8, y0 = Math.min((int) (g.guiHeight() * MAP_AT) - h / 2, g.guiHeight() - (int) HINT_LINE - h - 6);
         g.fill(x0 - 2, y0 - 2, x0 + w + 2, y0 + h + 2, argb(0.55f * alpha, 14, 13, 18));
         for (int i = 0; i < group.cells().size(); i++) {
-            int x = x0 + gap + (i % group.width()) * step, y = y0 + gap + (i / group.width()) * step;
+            BlockPos cell = group.cells().get(i);
+            int x = x0 + gap + group.column(cell) * step, y = y0 + gap + group.row(cell) * step;
             MechanicalCrafterBlockEntity crafter = crafter(i);
             int index = slotIndex(i);
             int color = !inReach(i) ? 0x7A2A2A : index >= 0 && !slot(index).isEmpty() ? 0xE2B25C
@@ -1066,7 +1022,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         arrow(g, 0, 1, alpha, filling);
     }
 
-    /** A faint arrow at the edge the head can turn to; brighter as the cursor rests there. */
     private void arrow(GuiGraphics g, int dx, int dy, float alpha, double filling) {
         if (!canTurn(dx, dy)) {
             return;
@@ -1092,29 +1047,29 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return Mth.clamp(Math.round(a * 255), 0, 255) << 24 | r << 16 | g << 8 | b;
     }
 
-    /** Development: how the group is seen. */
+    /** Development (SmokeTest): how the group is seen. */
     public String framing() {
         return gripMode ? String.format(Locale.ROOT, "with the grip, section %d,%d of %d×%d, field of view %.0f°", sectionColumn, sectionRow,
                 sectionColumns.length, sectionRows.length, lastFov)
                 : String.format(Locale.ROOT, "by hand, %.2f back, field of view %.0f°", distance, lastFov);
     }
 
-    /** Development: worked with the grip. */
+    /** Development (SmokeTest): worked with the grip. */
     public boolean gripMode() {
         return gripMode;
     }
 
-    /** Development: the section looked at, as column and row, and how many there are each way. */
+    /** Development (SmokeTest): the section looked at, as column and row, and how many there are each way. */
     public int[] section() {
         return new int[] {sectionColumn, sectionRow, sectionColumns.length, sectionRows.length};
     }
 
-    /** Development: the look as last drawn (degrees; negative pitch looks up). */
+    /** Development (SmokeTest): the pitch as last drawn (degrees; negative looks up). */
     public float lookPitch() {
         return lastPitch;
     }
 
-    /** Development: a window of this section within the grip's reach, or out of it (-1: none). */
+    /** Development (SmokeTest): a window of this section within the grip's reach, or out of it (-1: none). */
     public int windowIn(boolean reachable) {
         for (int i = group.cells().size() - 1; i >= 0; i--) {
             if (inSection(i) && inReach(i) == reachable) {
@@ -1124,15 +1079,15 @@ public class CrafterScene extends CineStation<CrafterMenu> {
         return -1;
     }
 
-    /** Development: a tossed item is in the air right now. */
+    /** Development (SmokeTest): a tossed item is in the air right now. */
     public boolean inFlight() {
         double t = moveTime();
         return move == Move.PUT && far && t >= RELEASE + 0.05 && t <= TOSS_BEAT - 0.05;
     }
 
     /**
-     * Development ({@code SmokeTest}): what the last frame drawn did not show well (empty: nothing). Every window must
-     * be between the drawer and the hint line, and the group's outer corners on the screen.
+     * Development (SmokeTest): what the last frame did not show well (empty: nothing). Every window must be between the
+     * drawer and the hint line, and the group's outer corners on the screen.
      */
     public String outOfFrame() {
         Window window = Minecraft.getInstance().getWindow();

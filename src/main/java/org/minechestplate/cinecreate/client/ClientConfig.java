@@ -25,6 +25,7 @@ public final class ClientConfig {
     private static final Map<ResourceLocation, ModConfigSpec.EnumValue<Trigger>> TRIGGERS;
     private static final ModConfigSpec.BooleanValue INVITATION;
     private static final ModConfigSpec.BooleanValue FOLLOW_LAUNCHES;
+    private static final ModConfigSpec.BooleanValue CLIENT_MODE;
 
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
@@ -45,11 +46,19 @@ public final class ClientConfig {
         FOLLOW_LAUNCHES = b.comment("At a Weighted Ejector, the head turns to follow what it throws to where it lands, then back.")
                 .translation("cinecreate.configuration.followLaunches")
                 .define("followLaunches", true);
+        CLIENT_MODE = b.comment("On a server without this add-on, a right-click on these blocks is still Create's own; with this"
+                        + " on, it is played out as a scene (the item in hand is used; 1-9 or the wheel choose it). Taken when joining"
+                        + " a server: a change applies from the next connection.")
+                .translation("cinecreate.configuration.clientMode")
+                .define("clientMode", false);
         SPEC = b.build();
         TRIGGERS = Collections.unmodifiableMap(triggers);
     }
 
     public static Trigger trigger(SceneKind kind) {
+        if (!CiApi.ok()) {
+            return Trigger.OFF;
+        }
         ModConfigSpec.EnumValue<Trigger> value = TRIGGERS.get(kind.id());
         return value == null || !SPEC.isLoaded() ? kind.trigger() : value.get();
     }
@@ -62,7 +71,11 @@ public final class ClientConfig {
         return !SPEC.isLoaded() || FOLLOW_LAUNCHES.get();
     }
 
-    /** Development ({@code SmokeTest}): changes a scene's trigger the way the config screen does (saved, then applied). */
+    public static boolean clientMode() {
+        return SPEC.isLoaded() && CLIENT_MODE.get();
+    }
+
+    /** Development (SmokeTest): changes a scene's trigger the way the config screen does (saved, then applied). */
     public static void set(SceneKind kind, Trigger trigger) {
         TRIGGERS.get(kind.id()).set(trigger);
         SPEC.save();
