@@ -127,8 +127,8 @@ public class FanScene extends DepotScene {
     }
 
     @Override
-    public Component hint() {
-        return kind == null ? super.hint() : Component.translatable("cinecreate.hint.fan_processing." + kind.name().toLowerCase(Locale.ROOT));
+    protected Component sceneHint() {
+        return kind == null ? super.sceneHint() : Component.translatable("cinecreate.hint.fan_processing." + kind.name().toLowerCase(Locale.ROOT));
     }
 
     /** Development (SmokeTest): what the stream does here, by Create's name ("splashing"...), or null. */

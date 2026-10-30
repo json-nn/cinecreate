@@ -93,7 +93,7 @@
   "cinecreate.configuration.valve_handle": "Valve Handle",
   "cinecreate.configuration.valve_handle.tooltip": "Any of the 17 Valve Handles.\nRight-click: a right-click starts the scene (with a dye in hand it stays Create's: recolouring).\nKey only: a right-click is Create's own (turns it at once); the Work at the machine key (H) starts the scene.\nOff: never a scene.",
   "cinecreate.configuration.mechanical_crafter": "Mechanical Crafters",
-  "cinecreate.configuration.mechanical_crafter.tooltip": "A group of Mechanical Crafters, up to 5×5 (a bigger group always stays Create's).\nRight-click: a right-click on a crafter's front starts the scene for its whole group.\nKey only: a right-click is Create's own (puts in / takes at once); the Work at the machine key (H) starts the scene.\nOff: never a scene.",
+  "cinecreate.configuration.mechanical_crafter.tooltip": "A group of Mechanical Crafters, up to 10×10 (walls bigger than 3×3 need an Extendo Grip; a bigger group stays Create's).\nRight-click: a right-click on a crafter's front starts the scene for its whole group.\nKey only: a right-click is Create's own (puts in / takes at once); the Work at the machine key (H) starts the scene.\nOff: never a scene.",
   "cinecreate.configuration.hand_crank": "Hand Crank",
   "cinecreate.configuration.hand_crank.tooltip": "The Hand Crank.\nRight-click: a right-click starts the scene; there, holding a mouse button turns it.\nKey only: a right-click is Create's own (hold it to turn); the Work at the machine key (H) starts the scene.\nOff: never a scene.",
   "cinecreate.configuration.basin": "Basin",
@@ -109,7 +109,7 @@
   "cinecreate.configuration.item_drain": "Item Drain",
   "cinecreate.configuration.item_drain.tooltip": "The Item Drain, worked from its grate.\nRight-click: a right-click starts the scene.\nKey only: a right-click is Create's own; the Work at the machine key (H) starts the scene.\nOff: never a scene.",
   "cinecreate.configuration.deployer": "Deployer hand-off",
-  "cinecreate.configuration.deployer.tooltip": "A Deployer facing sideways, at its hand: what you hold and what it holds change hands.\nRight-click: a right-click starts the scene.\nKey only: a right-click is Create's own; the Work at the machine key (H) starts the scene.\nOff: never a scene.",
+  "cinecreate.configuration.deployer.tooltip": "A Deployer, facing any way, at its hand: what you hold and what it holds change hands.\nRight-click: a right-click starts the scene.\nKey only: a right-click is Create's own; the Work at the machine key (H) starts the scene.\nOff: never a scene.",
   "cinecreate.configuration.millstone": "Millstone",
   "cinecreate.configuration.millstone.tooltip": "The Millstone, filled from above.\nRight-click: a right-click starts the scene.\nKey only: a right-click is Create's own; the Work at the machine key (H) starts the scene.\nOff: never a scene.",
   "cinecreate.configuration.mechanical_saw": "Mechanical Saw",
@@ -145,5 +145,10 @@
   "cinecreate.layout.spot.cage": "Cage",
   "cinecreate.layout.spot.mouth": "Mouth",
   "cinecreate.layout.spot.grate": "Grate",
-  "cinecreate.layout.spot.claw": "Claw"
+  "cinecreate.layout.spot.claw": "Claw",
+  "cinecreate.busy.ejector": "The plate is up: wait for it to come down",
+  "cinecreate.busy.spout": "The spout is filling: wait for it",
+  "cinecreate.busy.deployer": "The deployer's arm is out: wait for it",
+  "cinecreate.busy.press": "The press is coming down: wait for it",
+  "cinecreate.notice.saw_pieces": "The cut pieces are still on the table: take them first"
 }

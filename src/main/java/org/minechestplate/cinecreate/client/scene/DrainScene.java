@@ -20,6 +20,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
 import org.minechestplate.cinecreate.bridge.DrainMenu;
@@ -136,9 +137,8 @@ public class DrainScene extends CineStation<DrainMenu> {
             return;
         }
         Vec3 middle = top.add(layAt().subtract(spotBase(0)));
-        double half = 0.46 * spotArea(0);
         Vec3 hit = Picking.cursorOnPlane(middle.y);
-        if (hit != null && Math.abs(hit.x - middle.x) <= half && Math.abs(hit.z - middle.z) <= half) {
+        if (hit != null && inSpot(0, hit, middle, 0.46)) {
             hover();
         }
     }
@@ -146,7 +146,7 @@ public class DrainScene extends CineStation<DrainMenu> {
     /** Development (SmokeTest): points at the grate as the cursor would. */
     public void hover() {
         hovered = true;
-        aim = layAt();
+        aim = spot(0);
     }
 
     @Override
@@ -159,7 +159,7 @@ public class DrainScene extends CineStation<DrainMenu> {
 
     /** Where a container is laid (the layout's grate spot). */
     private Vec3 layAt() {
-        return spot(0);
+        return spotBase(0);
     }
 
     @Override
@@ -187,7 +187,7 @@ public class DrainScene extends CineStation<DrainMenu> {
 
     /** Lays what is carried (one container at a time, as the drain takes them); an empty hand takes back. */
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         Minecraft mc = Minecraft.getInstance();
         DrainMenu menu = menu();
         if (!hovered || menu == null || mc.level == null) {
@@ -233,7 +233,7 @@ public class DrainScene extends CineStation<DrainMenu> {
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         return Component.translatable("cinecreate.hint.item_drain");
     }
 
@@ -284,6 +284,7 @@ public class DrainScene extends CineStation<DrainMenu> {
         }
         ItemStack carried = menu.getCarried();
         boolean ok = carried.isEmpty() ? !slot(DrainMenu.MAIN).isEmpty() : slot(DrainMenu.MAIN).isEmpty() && accepts(DrainMenu.MAIN, carried);
+        ok = ok && notReady() == null;
         float p = (float) (0.45 + 0.15 * Math.sin(Scene.clock() * 4));
         EnchantFx.disc(pose, buffers, camera, layAt().add(0, 0.004, 0), 0.14, 0, EnchantFx.GLOW,
                 p, ok ? p * 0.75f : p * 0.2f, ok ? p * 0.45f : p * 0.2f);

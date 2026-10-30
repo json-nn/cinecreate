@@ -4,6 +4,7 @@ import com.simibubi.create.AllSoundEvents;
 import com.simibubi.create.content.kinetics.deployer.DeployerBlockEntity;
 import com.simibubi.create.content.kinetics.belt.transport.TransportedItemStack;
 import com.simibubi.create.content.logistics.depot.DepotBehaviour;
+import com.simibubi.create.content.logistics.depot.EjectorBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -43,7 +44,7 @@ public class DepotMenu extends BridgeMenu {
 
     public DepotMenu(int id, Inventory inventory, BlockPos pos, DepotBehaviour depot) {
         super(CineMenus.DEPOT.get(), id, inventory, pos, SLOTS, 1);
-        addSlot(new MainSlot(depot, inventory.player.getDirection()));
+        addSlot(new MainSlot(depot, Bridge.facing(inventory.player)));
         for (int i = 0; i < OUTPUTS; i++) {
             addSlot(new OutputSlot(depot, i));
         }
@@ -169,7 +170,12 @@ public class DepotMenu extends BridgeMenu {
 
         @Override
         public boolean mayPlace(ItemStack stack) {
-            return depot.isItemValid(stack);
+            return depot.isItemValid(stack) && !launching(depot);
+        }
+
+        @Override
+        public boolean mayPickup(Player player) {
+            return !launching(depot);
         }
 
         @Override
@@ -181,6 +187,11 @@ public class DepotMenu extends BridgeMenu {
         public int getMaxStackSize(ItemStack stack) {
             return stack.getMaxStackSize();
         }
+    }
+
+    /** An ejector whose plate is not down: Create takes and gives nothing then. */
+    static boolean launching(DepotBehaviour depot) {
+        return depot.blockEntity instanceof EjectorBlockEntity ejector && ejector.getState() != EjectorBlockEntity.State.CHARGED;
     }
 
     private static final class OutputSlot extends Slot {
@@ -221,6 +232,11 @@ public class DepotMenu extends BridgeMenu {
         @Override
         public void setChanged() {
             depot.blockEntity.notifyUpdate();
+        }
+
+        @Override
+        public boolean mayPickup(Player player) {
+            return !launching(depot);
         }
 
         @Override

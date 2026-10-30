@@ -1,5 +1,6 @@
 package org.minechestplate.cinecreate.bridge;
 
+import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.entity.player.Inventory;
@@ -9,6 +10,7 @@ import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -23,6 +25,8 @@ public abstract class BridgeMenu extends AbstractContainerMenu {
 
     protected final BlockPos pos;
     private final Block block;
+    @Nullable
+    private final BlockEntity blockEntity;
     protected final int machineSlots;
     /** The first slots that take items in; the others only give out (outputs). */
     protected final int inputSlots;
@@ -31,6 +35,7 @@ public abstract class BridgeMenu extends AbstractContainerMenu {
         super(type, id);
         this.pos = pos.immutable();
         this.block = inventory.player.level().getBlockState(pos).getBlock();
+        this.blockEntity = inventory.player.level().getBlockEntity(pos);
         this.machineSlots = machineSlots;
         this.inputSlots = inputSlots;
     }
@@ -70,7 +75,9 @@ public abstract class BridgeMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        return player.level().getBlockState(pos).is(block) && player.distanceToSqr(Vec3.atCenterOf(pos)) <= REACH_SQR;
+        boolean same = blockEntity == null ? player.level().getBlockState(pos).is(block)
+                : !blockEntity.isRemoved() && player.level().getBlockEntity(pos) == blockEntity;
+        return same && player.distanceToSqr(Vec3.atCenterOf(pos)) <= REACH_SQR;
     }
 
     @Override

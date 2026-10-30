@@ -25,6 +25,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.FlintAndSteelItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.BurnerMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
@@ -76,6 +77,11 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     }
 
     @Override
+    public boolean spotOnFace(int spot) {
+        return true;
+    }
+
+    @Override
     public List<Component> spotNames() {
         return List.of(Component.translatable("cinecreate.layout.spot.cage"));
     }
@@ -87,7 +93,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
 
     /** Where the hand feeds through the cage (the layout's cage spot). */
     private Vec3 cage() {
-        return spot(0);
+        return spotBase(0);
     }
 
     @Override
@@ -157,9 +163,8 @@ public class BurnerScene extends CineStation<BurnerMenu> {
             return;
         }
         Vec3 front = base.add(side().scale(0.5)).add(cage().subtract(spotBase(0)));
-        double half = 0.5 * spotArea(0);
         Vec3 hit = Picking.cursorOnPlane(front, side());
-        if (hit != null && Math.abs(hit.subtract(front).dot(right())) <= half && Math.abs(hit.y - front.y - 0.5) <= half) {
+        if (hit != null && inSpot(0, hit, front.add(0, 0.5, 0), 0.5)) {
             hover();
         }
     }
@@ -167,7 +172,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     /** Development (SmokeTest): points at the cage as the cursor would. */
     public void hover() {
         hovered = true;
-        aim = cage();
+        aim = spot(0);
     }
 
     @Override
@@ -225,7 +230,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
 
     /** Fuel goes in only if Create's own test (simulated) takes it; flint and steel lights an empty burner. */
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         Minecraft mc = Minecraft.getInstance();
         BurnerMenu menu = menu();
         if (!hovered || menu == null || mc.level == null) {
@@ -341,7 +346,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         if (Scene.clock() - refusedAt < REFUSED_HINT) {
             return Component.translatable("cinecreate.hint.blaze_burner.refused");
         }
@@ -379,7 +384,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         drawnFrame = frame;
         double t = moveTime();
         if (!striking && !lastOne && !Grip.inHand() && t >= WIND_UP && t < TOSS_BEAT && !flying.isEmpty()) {
-            ItemPlacer.renderOne(pose, buffers, camera.getPosition(), flying, flight(t), side, 77L, spotSize(0),
+            ItemPlacer.renderOne(pose, buffers, camera.getPosition(), flying, flight(t), side, 77L, 1f,
                     (float) (18 + 360 * Anim.window(t, WIND_UP, TOSS_BEAT)), light);
         }
     }
@@ -396,6 +401,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
         boolean ok = state.hasProperty(BlazeBurnerBlock.HEAT_LEVEL) && (state.getValue(BlazeBurnerBlock.HEAT_LEVEL) == HeatLevel.NONE
                 ? carried.getItem() instanceof FlintAndSteelItem
                 : BlazeBurnerBlock.tryInsert(state, mc.level, pos, carried.copy(), true, true, true).getResult() == InteractionResult.SUCCESS);
+        ok = ok && notReady() == null;
         float p = (float) (0.2 + 0.06 * Math.sin(Scene.clock() * 5));
         Fx.facePatch(pose, buffers, camera, cage().add(side().scale(0.01)), right(), new Vec3(0, 1, 0), 0.3,
                 p, ok ? p * 0.7f : p * 0.25f, ok ? p * 0.4f : p * 0.2f);

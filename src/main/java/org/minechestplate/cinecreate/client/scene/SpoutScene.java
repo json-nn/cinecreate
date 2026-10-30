@@ -1,5 +1,6 @@
 package org.minechestplate.cinecreate.client.scene;
 
+import org.minechestplate.cinecreate.bridge.DepotMenu;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.simibubi.create.content.fluids.spout.SpoutBlockEntity;
 import dev.dyslexic.cinematic.client.Anim;
@@ -55,6 +56,13 @@ public class SpoutScene extends DepotScene {
     }
 
     @Nullable
+    @Override
+    protected Component notReady() {
+        SpoutBlockEntity spout = spout();
+        return spout != null && spout.processingTicks != -1 ? Component.translatable("cinecreate.busy.spout") : null;
+    }
+
+    @Nullable
     private SpoutBlockEntity spout() {
         Minecraft mc = Minecraft.getInstance();
         return mc.level == null ? null : Composites.spoutOver(mc.level, pos);
@@ -73,10 +81,12 @@ public class SpoutScene extends DepotScene {
         if (spout != null && !fluid(spout).isEmpty()) {
             color = Colors.of(fluid(spout));
         }
-        if (ticks > 5) {
+        // поток без предмета (его забрали): ни искр, ни вспышки — наполнять нечего
+        boolean filling = !slot(DepotMenu.MAIN).isEmpty();
+        if (ticks > 5 && filling) {
             Fx.motes(plate().add(0, 0.12, 0), 0.07, 1, Colors.red(color), Colors.green(color), Colors.blue(color), 0.0);
         }
-        if (lastTicks > 5 && ticks >= 0 && ticks <= 5) {
+        if (lastTicks > 5 && ticks >= 0 && ticks <= 5 && filling) {
             fills++;
             flareAt = Scene.clock();
             Fx.motes(plate().add(0, 0.1, 0), 0.1, 10, Colors.red(color), Colors.green(color), Colors.blue(color), 0.2);
@@ -109,7 +119,7 @@ public class SpoutScene extends DepotScene {
     }
 
     @Override
-    public Component hint() {
-        return spout() == null ? super.hint() : Component.translatable("cinecreate.hint.spouting");
+    protected Component sceneHint() {
+        return spout() == null ? super.sceneHint() : Component.translatable("cinecreate.hint.spouting");
     }
 }

@@ -19,7 +19,7 @@ public abstract class MenuActionsMixin implements CiHookMarker {
     @Inject(method = "open", at = @At("HEAD"), cancellable = true, require = 0)
     private static void cinecreate$openBridge(ServerPlayer player, Sessions.Session session, CallbackInfoReturnable<Boolean> cir) {
         if (session.kind() == StationKind.ADDON && SceneBlocks.owns(session.addonId())) {
-            cir.setReturnValue(Bridge.open(player, session.pos()));
+            cir.setReturnValue(Bridge.open(player, session.pos(), session.side()));
         }
     }
 }

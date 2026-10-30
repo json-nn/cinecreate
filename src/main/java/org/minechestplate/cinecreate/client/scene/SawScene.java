@@ -30,8 +30,10 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.SawMenu;
+import org.minechestplate.cinecreate.client.CiNotice;
 import org.minechestplate.cinecreate.client.layout.Layouts;
 
 /**
@@ -90,6 +92,22 @@ public class SawScene extends CineStation<SawMenu> {
     }
 
     @Nullable
+    /** Something lies on the table: the input, or cut pieces Create keeps there until they can leave. */
+    private boolean tableHolds() {
+        return !slot(SawMenu.TABLE).isEmpty() || !piece().isEmpty();
+    }
+
+    /** The first cut piece on the table (Create's result slots), or nothing. */
+    private ItemStack piece() {
+        SawBlockEntity saw = saw();
+        for (int i = 1; saw != null && i < saw.inventory.getSlots(); i++) {
+            if (!saw.inventory.getStackInSlot(i).isEmpty()) {
+                return saw.inventory.getStackInSlot(i);
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
     private SawBlockEntity saw() {
         Minecraft mc = Minecraft.getInstance();
         return mc.level != null && mc.level.getBlockEntity(pos) instanceof SawBlockEntity saw ? saw : null;
@@ -285,13 +303,10 @@ public class SawScene extends CineStation<SawMenu> {
         return onArc(left ? 176 : 4, 0.03);
     }
 
-    /** The arc's point at this angle, raised by lift: the layout moves the arc and stretches it (width across, depth up). */
+    /** The arc's point at this angle, raised by lift. */
     private Vec3 onArc(double degrees, double lift) {
-        Layouts.Profile layout = Layouts.current(layoutId());
-        double wide = DIAL_WIDE * layout.whole().width() * layout.region(1).width() / 10000;
-        double high = DIAL_HIGH * layout.whole().depth() * layout.region(1).depth() / 10000;
         double a = Math.toRadians(degrees);
-        return spot(1).add(right().scale(Math.cos(a) * wide)).add(0, Math.sin(a) * high + lift, 0);
+        return spotBase(1).add(right().scale(Math.cos(a) * DIAL_WIDE)).add(0, Math.sin(a) * DIAL_HIGH + lift, 0);
     }
 
     /** The wheel turns the dial, a shape at a time, when there are more shapes than it holds (CI's). */
@@ -336,17 +351,16 @@ public class SawScene extends CineStation<SawMenu> {
         }
         double[] mouse = Picking.mouseGui();
         List<ItemStack> shapes = shapes();
-        double radius = 0.075 * spotSize(1);
+        double radius = 0.075;
         for (int k = 0; k < shapes.size(); k++) {
             if (onDial(k) > 0.5 && underCursor(mouse, shapePoint(k), radius)) {
                 hoverShape(k);
                 return;
             }
         }
-        Vec3 table = spot(0);
-        double half = PLATE * spotArea(0);
+        Vec3 table = spotBase(0);
         Vec3 hit = Picking.cursorOnPlane(table.y);
-        if (hit != null && Math.abs(hit.x - table.x) <= half && Math.abs(hit.z - table.z) <= half) {
+        if (hit != null && inSpot(0, hit, table, PLATE)) {
             hoverTable();
         }
     }
@@ -367,7 +381,7 @@ public class SawScene extends CineStation<SawMenu> {
         }
         onTable = false;
         hoverShape = k;
-        aim = k < n ? shapePoint(k).add(0, -0.1, 0).add(side().scale(0.12)) : null;
+        aim = k < n ? shapePoint(k).add(0, -0.1, 0).add(side().scale(0.12)).add(handShift(1)) : null;
     }
 
     @Override
@@ -411,7 +425,7 @@ public class SawScene extends CineStation<SawMenu> {
      * click the stack, a right click one), or an empty hand takes it back, as Create's own empty-handed click does.
      */
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         SawMenu menu = menu();
         if (menu == null) {
             return;
@@ -431,7 +445,7 @@ public class SawScene extends CineStation<SawMenu> {
         }
         ItemStack carried = menu.getCarried();
         if (carried.isEmpty()) {
-            if (!slot(SawMenu.TABLE).isEmpty()) {
+            if (tableHolds()) {
                 move = Move.TAKE;
                 startMove(TAKE, TAKE_BEAT, () -> {
                     Minecraft mc = Minecraft.getInstance();
@@ -443,7 +457,10 @@ public class SawScene extends CineStation<SawMenu> {
             }
             return;
         }
-        if (!slot(SawMenu.TABLE).isEmpty() || !accepts(SawMenu.TABLE, carried)) {
+        if (tableHolds() || !accepts(SawMenu.TABLE, carried)) {
+            if (!piece().isEmpty()) {
+                CiNotice.show(Component.translatable("cinecreate.notice.saw_pieces"));
+            }
             deny();
             return;
         }
@@ -455,13 +472,13 @@ public class SawScene extends CineStation<SawMenu> {
                 mc.gameMode.handleInventoryMouseClick(open.containerId, SawMenu.TABLE, button == 1 ? 1 : 0, ClickType.PICKUP, mc.player);
             }
             laid++;
-            Fx.motes(spot(0).add(0, 0.03, 0), 0.08, 5, 0.62f, 0.6f, 0.56f, 0.05);
+            Fx.motes(top.add(0, 0.03, 0), 0.08, 5, 0.62f, 0.6f, 0.56f, 0.05);
         });
     }
 
     @Override
     protected Vec3 restPoint(int slot) {
-        return spot(0);
+        return top;
     }
 
     @Nullable
@@ -475,12 +492,12 @@ public class SawScene extends CineStation<SawMenu> {
             return List.of(name, Component.translatable(chosenNow ? "cinecreate.saw.unchoose" : "cinecreate.saw.choose")
                     .withStyle(chosenNow ? ChatFormatting.GRAY : ChatFormatting.GOLD));
         }
-        ItemStack lying = slot(SawMenu.TABLE);
+        ItemStack lying = slot(SawMenu.TABLE).isEmpty() ? piece() : slot(SawMenu.TABLE);
         return onTable && carried.isEmpty() && !lying.isEmpty() ? List.of(lying.getHoverName()) : null;
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         return Component.translatable(turning() ? "cinecreate.hint.mechanical_saw" : "cinecreate.hint.mechanical_saw.stopped");
     }
 
@@ -565,15 +582,16 @@ public class SawScene extends CineStation<SawMenu> {
         Camera cam = Minecraft.getInstance().gameRenderer.getMainCamera();
         if (onTable && !moving()) {
             ItemStack carried = menu.getCarried();
-            boolean ok = carried.isEmpty() ? !slot(SawMenu.TABLE).isEmpty() : slot(SawMenu.TABLE).isEmpty() && accepts(SawMenu.TABLE, carried);
+            boolean ok = carried.isEmpty() ? tableHolds() : !tableHolds() && accepts(SawMenu.TABLE, carried);
+            ok = ok && notReady() == null;
             float p = (float) (0.45 + 0.15 * Math.sin(clock * 4));
-            EnchantFx.disc(pose, buffers, camera, spot(0).add(0, 0.004, 0), 0.16 * spotSize(0), 0, EnchantFx.GLOW,
+            EnchantFx.disc(pose, buffers, camera, top.add(0, 0.004, 0), 0.16, 0, EnchantFx.GLOW,
                     p, ok ? p * 0.75f : p * 0.2f, ok ? p * 0.45f : p * 0.2f);
         }
         List<ItemStack> shapes = shapes();
         int chosenShape = selected(shapes);
         double appear = Anim.outBack(Anim.window(clock - shapesAt, 0, 0.4), 1.4);
-        float grow = spotSize(1);
+        float grow = 1f;
         for (int k = 0; k < shapes.size(); k++) {
             double on = onDial(k) * appear;
             if (on < 0.02) {

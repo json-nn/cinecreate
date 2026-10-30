@@ -31,7 +31,7 @@ public class DrainMenu extends BridgeMenu {
     private DrainMenu(int id, Inventory inventory, BlockPos pos, ItemDrainBlockEntity drain) {
         super(CineMenus.DRAIN.get(), id, inventory, pos, 1, 1);
         Level level = inventory.player.level();
-        Direction far = inventory.player.getDirection();
+        Direction far = Bridge.facing(inventory.player);
         addSlot(new GrateSlot(drain, level.getCapability(Capabilities.ItemHandler.BLOCK, pos, far)));
         addPlayerInventory(inventory, 8, 84);
     }

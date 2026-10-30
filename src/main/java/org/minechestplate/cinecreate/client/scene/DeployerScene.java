@@ -17,6 +17,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.DeployerMenu;
 
@@ -55,6 +56,21 @@ public class DeployerScene extends CineStation<DeployerMenu> {
     }
 
     @Override
+    public boolean spotOnFace(int spot) {
+        return true;
+    }
+
+    @Nullable
+    @Override
+    protected Component notReady() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.level != null && mc.level.getBlockEntity(pos) instanceof DeployerBlockEntity deployer
+                && arm.moving(deployer.getHandOffset(mc.getTimer().getGameTimeDeltaPartialTick(false))) ? Component.translatable("cinecreate.busy.deployer") : null;
+    }
+
+    private final Motion arm = new Motion();
+
+    @Override
     public List<Component> spotNames() {
         return List.of(Component.translatable("cinecreate.layout.spot.claw"));
     }
@@ -64,7 +80,7 @@ public class DeployerScene extends CineStation<DeployerMenu> {
         return center();
     }
 
-    /** Where the hand meets the claw (the layout's claw spot), out as far as Create's claw is this frame. */
+    /** Where the hand meets the claw, out as far as Create's claw is this frame (moved as the editor moved the hand). */
     private Vec3 handOff() {
         return spot(0).add(claw().subtract(center()));
     }
@@ -143,7 +159,7 @@ public class DeployerScene extends CineStation<DeployerMenu> {
         if (overPanel) {
             return;
         }
-        if (underCursor(Picking.mouseGui(), handOff(), 0.35 * spotArea(0))) {
+        if (underCursor(Picking.mouseGui(), claw(), 0.35)) {
             hover();
         }
     }
@@ -170,7 +186,8 @@ public class DeployerScene extends CineStation<DeployerMenu> {
             return held.add(0, -0.02 * tap, 0);
         }
         double reach = Anim.inOutCubic(Anim.window(t, 0, HANDOFF_BEAT)) - Anim.inOutCubic(Anim.window(t, HANDOFF_BEAT + 0.05, HANDOFF));
-        return held.subtract(side().scale(0.2 * reach));
+        // кулак останавливается у ладони клешни, не входя в неё
+        return held.subtract(side().scale(0.12 * reach));
     }
 
     @Override
@@ -185,9 +202,16 @@ public class DeployerScene extends CineStation<DeployerMenu> {
 
     /** The hand-off, as Create's own click on the deployer's hand: whatever each holds changes hands. */
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         DeployerMenu menu = menu();
         if (!hovered || menu == null) {
+            return;
+        }
+        Minecraft client = Minecraft.getInstance();
+        ItemStack theirs = client.level != null && client.level.getBlockEntity(pos) instanceof DeployerBlockEntity deployer
+                ? DeployingScene.held(deployer) : null;
+        if (menu.getCarried().isEmpty() && theirs != null && theirs.isEmpty()) {
+            deny();
             return;
         }
         startMove(HANDOFF, HANDOFF_BEAT, () -> {
@@ -197,17 +221,17 @@ public class DeployerScene extends CineStation<DeployerMenu> {
                 mc.gameMode.handleInventoryButtonClick(open.containerId, DeployerMenu.SWAP);
             }
             swaps++;
-            Fx.motes(handOff(), 0.05, 4, 0.85f, 0.85f, 0.85f, 0.05);
+            Fx.motes(claw(), 0.05, 4, 0.85f, 0.85f, 0.85f, 0.05);
         });
     }
 
     @Override
     protected Vec3 restPoint(int slot) {
-        return spot(0);
+        return center();
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         return Component.translatable("cinecreate.hint.deployer");
     }
 

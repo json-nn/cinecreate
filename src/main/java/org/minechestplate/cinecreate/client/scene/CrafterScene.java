@@ -618,7 +618,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
 
     /** As Create's own click on a window: what is carried goes in (a Slot Cover covers), an empty hand takes it out. */
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         int index = hovered < 0 ? -1 : slotIndex(hovered);
         MechanicalCrafterBlockEntity crafter = hovered < 0 ? null : crafter(hovered);
         CrafterMenu menu = menu();
@@ -793,7 +793,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         if (watching) {
             return Component.translatable("cinecreate.hint.mechanical_crafter.crafting");
         }

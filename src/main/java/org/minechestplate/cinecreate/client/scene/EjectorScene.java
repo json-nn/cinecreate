@@ -46,6 +46,13 @@ public class EjectorScene extends DepotScene {
     }
 
     @Nullable
+    @Override
+    protected Component notReady() {
+        EjectorBlockEntity ejector = ejector();
+        return ejector != null && ejector.getState() != EjectorBlockEntity.State.CHARGED ? Component.translatable("cinecreate.busy.ejector") : null;
+    }
+
+    @Nullable
     private EjectorBlockEntity ejector() {
         Minecraft mc = Minecraft.getInstance();
         return mc.level != null && mc.level.getBlockEntity(pos) instanceof EjectorBlockEntity ejector ? ejector : null;
@@ -160,7 +167,7 @@ public class EjectorScene extends DepotScene {
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         return Component.translatable("cinecreate.hint.weighted_ejector");
     }
 

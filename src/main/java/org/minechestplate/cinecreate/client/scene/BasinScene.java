@@ -35,6 +35,9 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
@@ -139,15 +142,14 @@ public class BasinScene extends CineStation<BasinMenu> {
         return top;
     }
 
-    /** Where the hand drops and pours in (the layout's drop point). */
+    /** Where the hand drops and pours in. */
     private Vec3 dropAt() {
-        return spot(0);
+        return top;
     }
 
-    /** Where what is dropped or poured in lands: on the contents, under the drop point. */
+    /** Where what is dropped or poured in lands: on the contents. */
     private Vec3 landing() {
-        Vec3 shift = dropAt().subtract(top);
-        return surface().add(shift.x, 0, shift.z);
+        return surface();
     }
 
     @Override
@@ -220,7 +222,8 @@ public class BasinScene extends CineStation<BasinMenu> {
     /** Hanging from the rim, the grip gone: the player drops (the view falls back to their eyes; no harm done). */
     @Override
     protected void gripLost() {
-        if (inside.y - Minecraft.getInstance().player.getY() > HANG) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player != null && inside.y - player.getY() > HANG) {
             letGoAt = Scene.clock();
             hungFrom = lean().pos();
             return;
@@ -238,6 +241,18 @@ public class BasinScene extends CineStation<BasinMenu> {
     public CameraRig.Pose lean() {
         double k = Anim.inOutCubic(watch);
         Vec3 eye = inside.add(side().scale(CAMERA_OUT + BACK * k)).add(0, CAMERA_UP + RISE * k, 0);
+        if (k > 0) {
+            // подъём к смесителю — не в соседний блок: камера встаёт за 0.1 до него
+            Vec3 start = inside.add(side().scale(CAMERA_OUT)).add(0, CAMERA_UP, 0);
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level != null && mc.player != null) {
+                BlockHitResult hit = mc.level.clip(new ClipContext(start, eye, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player));
+                if (hit.getType() != HitResult.Type.MISS) {
+                    double room = Math.max(0, hit.getLocation().distanceTo(start) - 0.1);
+                    eye = start.add(eye.subtract(start).normalize().scale(room));
+                }
+            }
+        }
         if (letGoAt >= 0 && hungFrom != null) {
             // отпустил захват: вид падает к глазам
             double t = Scene.clock() - letGoAt;
@@ -274,6 +289,9 @@ public class BasinScene extends CineStation<BasinMenu> {
             return;
         }
         letGoAt = -1;
+        if (mc.level == null) {
+            return;
+        }
         mc.level.playLocalSound(mc.player.getX(), mc.player.getY(), mc.player.getZ(), SoundEvents.PLAYER_SMALL_FALL,
                 SoundSource.PLAYERS, 0.8f, 1f, false);
         CiNotice.show(Component.translatable("cinecreate.notice.grip_dropped"));
@@ -313,9 +331,8 @@ public class BasinScene extends CineStation<BasinMenu> {
             return;
         }
         Vec3 at = dropAt();
-        double half = 0.5 * spotArea(0);
         Vec3 hit = Picking.cursorOnPlane(at.y);
-        if (hit != null && Math.abs(hit.x - at.x) <= half && Math.abs(hit.z - at.z) <= half) {
+        if (hit != null && inSpot(0, hit, at, 0.5)) {
             hover();
         }
     }
@@ -323,7 +340,7 @@ public class BasinScene extends CineStation<BasinMenu> {
     /** Development (SmokeTest): points at the basin as the cursor would. */
     public void hover() {
         hovered = true;
-        aim = dropAt();
+        aim = spot(0);
     }
 
     @Override
@@ -374,7 +391,7 @@ public class BasinScene extends CineStation<BasinMenu> {
      * button the whole stack, the right one item), an empty hand takes everything out.
      */
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         Minecraft mc = Minecraft.getInstance();
         BasinMenu menu = menu();
         if (!hovered || menu == null || mc.level == null) {
@@ -398,7 +415,7 @@ public class BasinScene extends CineStation<BasinMenu> {
             return;
         }
         if (GenericItemFilling.canItemBeFilled(mc.level, carried) || carried.is(Items.SPONGE)) {
-            if (fluidUnits() < 1) {
+            if (!canFill(carried)) {
                 refuse();
                 return;
             }
@@ -510,7 +527,7 @@ public class BasinScene extends CineStation<BasinMenu> {
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         if (mixing) {
             return Component.translatable("cinecreate.hint.basin.mixing");
         }
@@ -738,7 +755,7 @@ public class BasinScene extends CineStation<BasinMenu> {
         }
         double k = Anim.clamp01(age / FALL);
         Vec3 at = Anim.lerp(fallFrom, landing(), k * k);
-        ItemPlacer.renderOne(pose, buffers, camera.getPosition(), falling, at, side, 31L, spotSize(0), (float) (18 * (1 - k)), light);
+        ItemPlacer.renderOne(pose, buffers, camera.getPosition(), falling, at, side, 31L, 1f, (float) (18 * (1 - k)), light);
     }
 
     @Override
@@ -755,7 +772,7 @@ public class BasinScene extends CineStation<BasinMenu> {
             return;
         }
         float p = (float) (0.45 + 0.15 * Math.sin(clock * 4));
-        boolean ok = !refusesCarried();
+        boolean ok = !refusesCarried() && notReady() == null;
         EnchantFx.disc(pose, buffers, camera, landing().add(0, 0.01, 0), 0.22, 0, EnchantFx.GLOW,
                 p, ok ? p * 0.75f : p * 0.2f, ok ? p * 0.45f : p * 0.2f);
     }
@@ -771,9 +788,32 @@ public class BasinScene extends CineStation<BasinMenu> {
         if (carried.isEmpty()) {
             return !holdsItems();
         }
-        if (GenericItemEmptying.canItemBeEmptied(mc.level, carried) || GenericItemFilling.canItemBeFilled(mc.level, carried)) {
+        if (GenericItemEmptying.canItemBeEmptied(mc.level, carried)) {
             return false;
         }
+        if (GenericItemFilling.canItemBeFilled(mc.level, carried) || carried.is(Items.SPONGE)) {
+            return !canFill(carried);
+        }
         return slotFor(carried, -1) < 0;
+    }
+
+    /** Whether Create would fill this from the basin: one of its tanks holds at least what the container takes (a sponge: any fluid). */
+    private boolean canFill(ItemStack carried) {
+        Minecraft mc = Minecraft.getInstance();
+        IFluidHandler tanks = mc.level == null ? null : mc.level.getCapability(Capabilities.FluidHandler.BLOCK, pos, null);
+        if (tanks == null) {
+            return false;
+        }
+        for (int i = 0; i < tanks.getTanks(); i++) {
+            FluidStack fluid = tanks.getFluidInTank(i);
+            if (fluid.isEmpty()) {
+                continue;
+            }
+            int needed = carried.is(Items.SPONGE) ? 1 : GenericItemFilling.getRequiredAmountForItem(mc.level, carried, fluid.copy());
+            if (needed > 0 && fluid.getAmount() >= needed) {
+                return true;
+            }
+        }
+        return false;
     }
 }

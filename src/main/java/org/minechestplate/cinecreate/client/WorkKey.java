@@ -53,6 +53,7 @@ public final class WorkKey {
     private static Component text = Component.empty();
     @Nullable
     private static BlockPos checkedPos, checkedFrom;
+    private static long checkedAt;
     private static boolean checkedGrip;
     @Nullable
     private static Level checkedLevel;
@@ -166,7 +167,9 @@ public final class WorkKey {
     private static Reach.Plan plan(LocalPlayer player, BlockPos pos) {
         BlockPos from = player.blockPosition();
         boolean grip = Grip.inHand();
-        if (!pos.equals(checkedPos) || !from.equals(checkedFrom) || grip != checkedGrip || player.level() != checkedLevel) {
+        long now = player.level().getGameTime();
+        if (!pos.equals(checkedPos) || !from.equals(checkedFrom) || grip != checkedGrip || player.level() != checkedLevel || now - checkedAt >= 10) {
+            checkedAt = now;
             checkedPos = pos.immutable();
             checkedFrom = from;
             checkedGrip = grip;

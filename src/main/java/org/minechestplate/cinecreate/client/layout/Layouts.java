@@ -19,7 +19,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.fml.loading.FMLPaths;
 import org.minechestplate.cinecreate.CineCreate;
 
-/** Our scenes' layout profiles (three per scene, as in CI), kept in {@code config/cinecreate-layouts.json}. */
+/** Where our scenes' hands work, as moved in the editor: three profiles per scene (as in CI), in {@code config/cinecreate-layouts.json}. */
 public final class Layouts {
     private Layouts() {}
 
@@ -48,7 +48,32 @@ public final class Layouts {
         boolean untouched() {
             return whole.equals(Region.NONE) && spots.stream().allMatch(Region.NONE::equals);
         }
+
+        Profile blend(Profile to, double t) {
+            List<Region> all = new ArrayList<>();
+            for (int i = 0; i < Math.max(spots.size(), to.spots().size()); i++) {
+                all.add(region(i).blend(to.region(i), t));
+            }
+            return new Profile(whole.blend(to.whole(), t), List.copyOf(all));
+        }
+
+        boolean near(Profile to) {
+            for (int i = -1; i < Math.max(spots.size(), to.spots().size()); i++) {
+                double[] a = region(i).values(), b = to.region(i).values();
+                for (int f = 0; f < Region.FIELDS; f++) {
+                    if (Math.abs(a[f] - b[f]) > 1e-5) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
     }
+
+    private record Shown(Profile profile, long at) {}
+
+    /** What each scene shows now: edits ease in at CI's rate (1 - e^(-18 dt)) instead of jumping. */
+    private static final Map<String, Shown> SHOWN = new HashMap<>();
 
     private record Saved(Profile[] profiles, int selected) {}
 
@@ -57,14 +82,39 @@ public final class Layouts {
     private static boolean loaded;
 
     public static Profile current(String id) {
-        Profile shown = PREVIEW.get(id);
-        if (shown != null) {
-            return shown;
+        Profile target = PREVIEW.get(id);
+        if (target == null) {
+            Saved saved = saved(id);
+            target = saved.profiles()[saved.selected()];
         }
-        Saved saved = saved(id);
-        return saved.profiles()[saved.selected()];
+        long now = System.nanoTime();
+        Shown shown = SHOWN.get(id);
+        if (shown == null) {
+            SHOWN.put(id, new Shown(target, now));
+            return target;
+        }
+        if (shown.profile() == target || now == shown.at()) {
+            return shown.profile();
+        }
+        double dt = Math.min(0.1, (now - shown.at()) / 1e9);
+        Profile next = shown.profile().blend(target, 1 - Math.exp(-18 * dt));
+        next = next.near(target) ? target : next;
+        SHOWN.put(id, new Shown(next, now));
+        return next;
     }
 
+    /** Development (SmokeTest): edits show at once instead of easing in. */
+    public static void smokeSettle() {
+        SHOWN.clear();
+    }
+
+    /** The spot's surface axes: across, along (towards the player on a top, up on a face) and out of it. */
+    public static Vec3[] axes(LayoutScene scene, int spot) {
+        Vec3 across = scene.layoutAcross(), towards = scene.layoutTowards(), up = new Vec3(0, 1, 0);
+        return scene.spotOnFace(spot) ? new Vec3[] {across, up, towards} : new Vec3[] {across, towards, up};
+    }
+
+    /** The hand's spot: the scene's own point moved by the whole layout's and the spot's offsets. */
     public static Vec3 point(LayoutScene scene, int spot) {
         Vec3 base = scene.spotBase(spot);
         Profile profile = current(scene.layoutId());
@@ -72,42 +122,9 @@ public final class Layouts {
             return base;
         }
         Region whole = profile.whole(), own = profile.region(spot);
-        Vec3 across = scene.layoutAcross(), towards = scene.layoutTowards();
-        Vec3 centre = centre(scene);
-        Vec3 rel = base.subtract(centre);
-        double a = rel.dot(across) * whole.width() / 100, t = rel.dot(towards) * whole.depth() / 100;
-        double turn = Math.toRadians(whole.rotation()), cos = Math.cos(turn), sin = Math.sin(turn);
-        Vec3 out = centre.add(across.scale(a * cos - t * sin)).add(towards.scale(a * sin + t * cos)).add(0, rel.y, 0);
-        return out.add(across.scale((whole.x() + own.x()) / 16)).add(towards.scale((whole.towards() + own.towards()) / 16))
-                .add(0, (whole.height() + own.height()) / 16, 0);
-    }
-
-    /** The drawn item's scale. */
-    public static float size(LayoutScene scene, int spot) {
-        Profile profile = current(scene.layoutId());
-        return (float) (profile.whole().size() / 100 * profile.region(spot).size() / 100);
-    }
-
-    /** The spot's click area, as a share of the scene's own. */
-    public static double area(LayoutScene scene, int spot) {
-        Profile profile = current(scene.layoutId());
-        Region whole = profile.whole(), own = profile.region(spot);
-        return Math.sqrt(whole.width() * whole.depth() * own.width() * own.depth()) / 10000;
-    }
-
-    /** Degrees the drawn item turns about the vertical. */
-    public static double rotation(LayoutScene scene, int spot) {
-        Profile profile = current(scene.layoutId());
-        return profile.whole().rotation() + profile.region(spot).rotation();
-    }
-
-    static Vec3 centre(LayoutScene scene) {
-        int n = scene.spotNames().size();
-        Vec3 sum = Vec3.ZERO;
-        for (int i = 0; i < n; i++) {
-            sum = sum.add(scene.spotBase(i));
-        }
-        return n == 0 ? sum : sum.scale(1.0 / n);
+        Vec3[] axes = axes(scene, spot);
+        return base.add(axes[0].scale((whole.x() + own.x()) / 16)).add(axes[1].scale((whole.along() + own.along()) / 16))
+                .add(axes[2].scale((whole.out() + own.out()) / 16));
     }
 
     static Profile[] profiles(String id) {

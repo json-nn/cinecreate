@@ -79,9 +79,9 @@ public class DepotScene extends CineStation<DepotMenu> {
         return setAt;
     }
 
-    /** Where the hand lays a stack and takes it (the layout's plate spot). */
+    /** Where a stack is laid and taken. */
     protected final Vec3 plate() {
-        return spot(0);
+        return setAt;
     }
 
     // ---- staging -------------------------------------------------------------------------------------
@@ -159,9 +159,8 @@ public class DepotScene extends CineStation<DepotMenu> {
             return;
         }
         Vec3 middle = top.add(plate().subtract(setAt));
-        double half = PLATE * spotArea(0);
         Vec3 hit = Picking.cursorOnPlane(middle.y + 0.01);
-        if (hit != null && Math.abs(hit.x - middle.x) <= half && Math.abs(hit.z - middle.z) <= half) {
+        if (hit != null && inSpot(0, hit, middle, PLATE)) {
             hover();
         }
     }
@@ -169,7 +168,7 @@ public class DepotScene extends CineStation<DepotMenu> {
     /** Development (SmokeTest): touches the plate as the cursor would. */
     public void hover() {
         hovered = true;
-        aim = plate();
+        aim = spot(0);
     }
 
     /** The cursor leaving does not stop a move half way, nor take the hand off a pinned plate. */
@@ -212,7 +211,7 @@ public class DepotScene extends CineStation<DepotMenu> {
     }
 
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         if (!hovered) {
             return;
         }
@@ -282,11 +281,11 @@ public class DepotScene extends CineStation<DepotMenu> {
     @Override
     public List<Component> tooltip(ItemStack carried) {
         ItemStack lying = slot(DepotMenu.MAIN);
-        return hovered && carried.isEmpty() && !lying.isEmpty() ? List.of(lying.getHoverName()) : null;
+        return hovered && carried.isEmpty() && !lying.isEmpty() && notReady() == null ? List.of(lying.getHoverName()) : null;
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         return Component.translatable("cinecreate.hint.depot");
     }
 
@@ -313,7 +312,7 @@ public class DepotScene extends CineStation<DepotMenu> {
             ghost = ItemStack.EMPTY;
             return;
         }
-        ItemPlacer.render(pose, buffers, camera.getPosition(), ghost, plate(), side, 31L, spotSize(0), 0f, light);
+        ItemPlacer.render(pose, buffers, camera.getPosition(), ghost, plate(), side, 31L, 1f, 0f, light);
     }
 
     /** A warm glow on the plate under the cursor; red when the depot will not take what is carried. */
@@ -324,6 +323,7 @@ public class DepotScene extends CineStation<DepotMenu> {
         }
         ItemStack carried = menu() == null ? ItemStack.EMPTY : menu().getCarried();
         boolean ok = carried.isEmpty() ? holdsAnything() : accepts(DepotMenu.MAIN, carried);
+        ok = ok && notReady() == null;
         float p = (float) (0.45 + 0.15 * Math.sin(Scene.clock() * 4));
         EnchantFx.disc(pose, buffers, camera, plate().add(0, 0.004, 0), 0.16, 0, EnchantFx.GLOW,
                 p, ok ? p * 0.75f : p * 0.2f, ok ? p * 0.45f : p * 0.2f);

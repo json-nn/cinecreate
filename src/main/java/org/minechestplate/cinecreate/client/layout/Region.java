@@ -1,49 +1,33 @@
 package org.minechestplate.cinecreate.client.layout;
 
-/** One spot's edits (or the whole layout's), in CI's units: pixels (1/16 block), degrees and percent. */
-public record Region(double x, double towards, double rotation, double width, double depth, double height, double size) {
-    public static final Region NONE = new Region(0, 0, 0, 100, 100, 0, 100);
-    public static final int FIELDS = 7;
+/** Where a hand works, moved from the scene's own spot: across, along (towards the player on a top, up on a face) and out, in pixels. */
+public record Region(double x, double along, double out) {
+    public static final Region NONE = new Region(0, 0, 0);
+    public static final int FIELDS = 3;
+    static final double MAX = 6, STEP = 0.125;
 
     public double value(int field) {
-        return switch (field) {
-            case 0 -> x;
-            case 1 -> towards;
-            case 2 -> rotation;
-            case 3 -> width;
-            case 4 -> depth;
-            case 5 -> height;
-            default -> size;
-        };
+        return field == 0 ? x : field == 1 ? along : out;
     }
 
     public Region with(int field, double value) {
-        double v = Math.max(min(field), Math.min(max(field), value));
-        return new Region(field == 0 ? v : x, field == 1 ? v : towards, field == 2 ? v : rotation, field == 3 ? v : width,
-                field == 4 ? v : depth, field == 5 ? v : height, field == 6 ? v : size);
+        double v = Math.max(-MAX, Math.min(MAX, value));
+        return new Region(field == 0 ? v : x, field == 1 ? v : along, field == 2 ? v : out);
     }
 
-    static boolean percent(int field) {
-        return field == 3 || field == 4 || field == 6;
-    }
-
-    static double min(int field) {
-        return percent(field) ? 50 : field == 2 ? -180 : field == 5 ? -2 : -6;
-    }
-
-    static double max(int field) {
-        return percent(field) ? 150 : -min(field);
-    }
-
-    static double step(int field) {
-        return percent(field) || field == 2 ? 1 : 0.125;
+    Region blend(Region to, double t) {
+        return new Region(x + (to.x - x) * t, along + (to.along - along) * t, out + (to.out - out) * t);
     }
 
     double[] values() {
-        return new double[] {x, towards, rotation, width, depth, height, size};
+        return new double[] {x, along, out};
     }
 
+    /** From a saved array: [x, along, out], or the older 7/11-field layouts (x, along, …, out at 5). */
     static Region of(double[] v) {
+        if (v.length >= 6) {
+            return NONE.with(0, v[0]).with(1, v[1]).with(2, v[5]);
+        }
         Region r = NONE;
         for (int i = 0; i < Math.min(FIELDS, v.length); i++) {
             r = r.with(i, v[i]);

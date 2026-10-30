@@ -123,9 +123,9 @@ public class PressScene extends DepotScene {
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         if (press() == null) {
-            return super.hint();
+            return super.sceneHint();
         }
         return Component.translatable(stopped() ? "cinecreate.hint.pressing.stopped" : "cinecreate.hint.pressing");
     }
@@ -163,6 +163,16 @@ public class PressScene extends DepotScene {
         flinch = Anim.clamp01(flinch + (coming ? Scene.frameDt : -Scene.frameDt) / FLINCH_TIME);
         noteChanges(running);
         watchResult();
+    }
+
+    private final Motion headMotion = new Motion();
+
+    @Nullable
+    @Override
+    protected Component notReady() {
+        PressingBehaviour pressing = pressing();
+        float head = pressing == null || !pressing.running ? 0 : pressing.getRenderedHeadOffset(Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false));
+        return headMotion.moving(head) && head > 0.3f ? Component.translatable("cinecreate.busy.press") : null;
     }
 
     private void impact(PressingBehaviour pressing) {

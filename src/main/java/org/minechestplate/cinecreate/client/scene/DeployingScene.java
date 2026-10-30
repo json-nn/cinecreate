@@ -36,6 +36,7 @@ public class DeployingScene extends DepotScene {
     /** Development (SmokeTest): punches, changes of the work, swaps with the deployer's hand. */
     public int punches, applied, swaps;
     private boolean punchedSinceChange;
+    private final Motion arm = new Motion();
 
     private float lastOffset;
     private boolean extending;
@@ -73,7 +74,7 @@ public class DeployingScene extends DepotScene {
         return Vec3.atCenterOf(deployer.getBlockPos()).add(0, -(PALM + offset), 0);
     }
 
-    /** The deployer's hand wins over the plate: it hangs over it. */
+    /** The deployer's hand wins over the plate while it hangs drawn back over it. */
     @Override
     public void updateCursor(boolean overPanel) {
         if (moving()) {
@@ -89,7 +90,9 @@ public class DeployingScene extends DepotScene {
         if (overPanel || smokePin || palm == null) {
             return;
         }
-        if (underCursor(Picking.mouseGui(), palm, 0.2)) {
+        DeployerBlockEntity deployer = deployer();
+        float reach = deployer == null ? 0 : deployer.getHandOffset(Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false));
+        if (reach < 0.2f && underCursor(Picking.mouseGui(), palm, 0.2)) {
             hoverHand();
         }
     }
@@ -125,10 +128,10 @@ public class DeployingScene extends DepotScene {
     }
 
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         if (!onHand) {
             handing = false;
-            super.act(button, shift);
+            super.sceneAct(button, shift);
             return;
         }
         DepotMenu menu = menu();
@@ -168,7 +171,12 @@ public class DeployingScene extends DepotScene {
     /** What the deployer holds, as Create syncs it for drawing (a protected field: read by reflection), or null if unreadable. */
     @Nullable
     private ItemStack held() {
-        DeployerBlockEntity deployer = deployer();
+        return held(deployer());
+    }
+
+    /** The same, for any deployer. */
+    @Nullable
+    static ItemStack held(@Nullable DeployerBlockEntity deployer) {
         if (deployer == null || heldItemMissing) {
             return null;
         }
@@ -188,6 +196,14 @@ public class DeployingScene extends DepotScene {
     @Override
     public float bodyPitch() {
         return 30f;
+    }
+
+    @Nullable
+    @Override
+    protected Component notReady() {
+        DeployerBlockEntity deployer = deployer();
+        return deployer != null && arm.moving(deployer.getHandOffset(Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false)))
+                ? Component.translatable("cinecreate.busy.deployer") : null;
     }
 
     @Nullable
@@ -243,7 +259,7 @@ public class DeployingScene extends DepotScene {
     }
 
     @Override
-    public Component hint() {
-        return deployer() == null ? super.hint() : Component.translatable("cinecreate.hint.deploying");
+    protected Component sceneHint() {
+        return deployer() == null ? super.sceneHint() : Component.translatable("cinecreate.hint.deploying");
     }
 }

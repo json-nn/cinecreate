@@ -22,13 +22,13 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
+import org.minechestplate.cinecreate.client.scene.DevView;
 
-/** CI's layout editor (its look, keys and strings) for our scenes, which CI's own editor cannot serve. */
+/** CI's layout editor (its look, keys and strings) for our scenes, which CI's own cannot serve: where each scene's hand works. */
 public final class LayoutPanel {
     private LayoutPanel() {}
 
-    private static final int W = 180, H = 362, ROW_Y = 108, ROW_H = 22;
-    private static final String[] FIELDS = {"offset_x", "towards", "rotation", "width", "depth", "height", "item_size"};
+    private static final int W = 180, H = 244, ROW_Y = 98, ROW_H = 22, HINT_Y = 172, RESET_Y = 188, SAVE_Y = 214;
     private static final String[] GEAR = {
         ".....####.....", ".....####.....", "..##.####.##..", "..##########..", "...########...", "##############", "#####....#####",
         "#####....#####", "##############", "...########...", "..##########..", "..##.####.##..", ".....####.....", ".....####....."};
@@ -48,6 +48,9 @@ public final class LayoutPanel {
     @Nullable
     private static LayoutScene editing;
 
+    /** Development (SmokeTest): developer mode on. */
+    public static boolean smokeForce;
+
     public static boolean isOpen() {
         return open;
     }
@@ -61,12 +64,9 @@ public final class LayoutPanel {
         return Settings.developerMode() || smokeForce;
     }
 
-    /** Development (SmokeTest): developer mode on. */
-    public static boolean smokeForce;
-
     public static void open() {
         LayoutScene scene = scene();
-        if (scene == null || !developer()) {
+        if (scene == null || !developer() || ((ClientStation) scene).busy()) {
             return;
         }
         editing = scene;
@@ -95,7 +95,7 @@ public final class LayoutPanel {
         }
     }
 
-    /** Development (SmokeTest): sets a field of the spot shown (-1: the whole layout) and saves. */
+    /** Development (SmokeTest): sets a field of a spot (-1: the whole layout) and saves. */
     public static void smokeSet(int spot, int field, double value) {
         region = spot;
         change(field, value);
@@ -115,6 +115,12 @@ public final class LayoutPanel {
         drafts[profile] = drafts[profile].with(region, drafts[profile].region(region).with(field, value));
         Layouts.preview(editing.layoutId(), drafts[profile]);
         saveError = false;
+    }
+
+    /** The field's string, as CI names it for a top or a face (the whole layout follows the first spot). */
+    private static String fieldKey(int field) {
+        boolean face = editing != null && editing.spotOnFace(Math.max(region, 0));
+        return field == 0 ? "offset_x" : field == 1 ? face ? "offset_y" : "towards" : face ? "outward" : "height";
     }
 
     private static void layout() {
@@ -144,10 +150,15 @@ public final class LayoutPanel {
         return developer() && !open && shown < 0.01 && mx >= toggleX && mx < toggleX + 30 * scale && my >= toggleY && my < toggleY + 28 * scale;
     }
 
+    private static int rowField(double my) {
+        int row = (int) ((ly(my) - ROW_Y) / ROW_H);
+        return ly(my) >= ROW_Y && row < Region.FIELDS ? row : -1;
+    }
+
     private static void slide(double mx) {
         double t = Mth.clamp((lx(mx) - 11) / 158, 0, 1);
-        double value = Mth.lerp(t, Region.min(slider), Region.max(slider));
-        change(slider, Math.round(value / Region.step(slider)) * Region.step(slider));
+        double value = Mth.lerp(t, -Region.MAX, Region.MAX);
+        change(slider, Math.round(value / Region.STEP) * Region.STEP);
     }
 
     private static void release() {
@@ -166,6 +177,11 @@ public final class LayoutPanel {
             }
         }
         return best;
+    }
+
+    /** The editing hint CI's stations show in place of their own while the editor is open. */
+    public static Component hint() {
+        return Component.translatable("cinematic.surface_editor.hint");
     }
 
     // ---- input (CI's scene screen is open: we see its events first) ----
@@ -198,14 +214,14 @@ public final class LayoutPanel {
             } else if (py >= 55 && py <= 75) {
                 region = Math.floorMod(region + 1 + (px < 90 ? -1 : 1), editing.spotNames().size() + 1) - 1;
                 release();
-            } else if (py >= ROW_Y && py < ROW_Y + Region.FIELDS * ROW_H) {
-                slider = (int) ((py - ROW_Y) / ROW_H);
+            } else if (rowField(my) >= 0) {
+                slider = rowField(my);
                 slide(mx);
-            } else if (py >= 306 && py <= 322) {
+            } else if (py >= RESET_Y && py <= RESET_Y + 16) {
                 drafts[profile] = Layouts.Profile.NONE;
                 Layouts.preview(editing.layoutId(), drafts[profile]);
                 saveError = false;
-            } else if (py >= 334 && py <= 352) {
+            } else if (py >= SAVE_Y && py <= SAVE_Y + 18) {
                 if (px < 90) {
                     save();
                 } else {
@@ -219,7 +235,7 @@ public final class LayoutPanel {
             if (region >= 0) {
                 region = hit;
             }
-            dragFrom = Picking.cursorOnPlane(Layouts.point(editing, hit), new Vec3(0, 1, 0));
+            dragFrom = Picking.cursorOnPlane(Layouts.point(editing, hit), Layouts.axes(editing, hit)[2]);
             dragLayout = drafts[profile];
         }
     }
@@ -232,12 +248,12 @@ public final class LayoutPanel {
         if (slider >= 0) {
             slide(event.getMouseX());
         } else if (dragFrom != null && dragLayout != null) {
-            Vec3 hit = Picking.cursorOnPlane(dragFrom, new Vec3(0, 1, 0));
+            Vec3[] axes = Layouts.axes(editing, Math.max(region, 0));
+            Vec3 hit = Picking.cursorOnPlane(dragFrom, axes[2]);
             if (hit != null) {
                 Vec3 delta = hit.subtract(dragFrom);
                 Region base = dragLayout.region(region);
-                Region moved = base.with(0, base.x() + delta.dot(editing.layoutAcross()) * 16)
-                        .with(1, base.towards() + delta.dot(editing.layoutTowards()) * 16);
+                Region moved = base.with(0, base.x() + delta.dot(axes[0]) * 16).with(1, base.along() + delta.dot(axes[1]) * 16);
                 drafts[profile] = dragLayout.with(region, moved);
                 Layouts.preview(editing.layoutId(), drafts[profile]);
                 saveError = false;
@@ -257,9 +273,9 @@ public final class LayoutPanel {
             return;
         }
         event.setCanceled(true);
-        int row = (int) ((ly(event.getMouseY()) - ROW_Y) / ROW_H);
-        if (inPanel(event.getMouseX(), event.getMouseY()) && ly(event.getMouseY()) >= ROW_Y && row < Region.FIELDS) {
-            change(row, drafts[profile].region(region).value(row) + Math.signum(event.getScrollDeltaY()) * Region.step(row));
+        int field = rowField(event.getMouseY());
+        if (inPanel(event.getMouseX(), event.getMouseY()) && field >= 0) {
+            change(field, drafts[profile].region(region).value(field) + Math.signum(event.getScrollDeltaY()) * Region.STEP);
         }
     }
 
@@ -280,7 +296,7 @@ public final class LayoutPanel {
         } else if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
             save();
         } else if (key == GLFW.GLFW_KEY_C) {
-            org.minechestplate.cinecreate.client.scene.DevView.copyCameraPose();
+            DevView.copyCameraPose();
         }
         event.setCanceled(true);
     }
@@ -328,9 +344,7 @@ public final class LayoutPanel {
             return;
         }
         float a = (float) shown;
-        int row = (int) ((ly(mouse[1]) - ROW_Y) / ROW_H);
-        int field = open && inPanel(mouse[0], mouse[1]) && ly(mouse[1]) >= ROW_Y && row < Region.FIELDS
-                && (ly(mouse[1]) - ROW_Y) % ROW_H < 11 && slider < 0 ? row : -1;
+        int field = open && inPanel(mouse[0], mouse[1]) && (ly(mouse[1]) - ROW_Y) % ROW_H < 11 && slider < 0 ? rowField(mouse[1]) : -1;
         if (field != tooltipField) {
             tooltipField = field;
             tooltipAt = Scene.clock();
@@ -342,24 +356,23 @@ public final class LayoutPanel {
         g.drawString(font, editing.layoutTitle(), 10, 10, color(a, 242, 234, 216), false);
         selector(g, font, 29, Component.translatable("cinematic.grid_editor.profile", profile + 1), a);
         selector(g, font, 55, region < 0 ? Component.translatable("cinematic.spatial_editor.all") : editing.spotNames().get(region), a);
-        g.drawString(font, Component.translatable("cinematic.spatial_editor.placement"), 10, 87, color(a * 0.65, 181, 195, 199), false);
+        g.drawString(font, Component.translatable("cinematic.spatial_editor.placement"), 10, 81, color(a * 0.65, 181, 195, 199), false);
         for (int f = 0; f < Region.FIELDS; f++) {
             int yy = ROW_Y + f * ROW_H;
             double value = drafts[profile].region(region).value(f);
-            String number = f == 2 ? String.format(Locale.ROOT, "%+.0f°", value)
-                    : Region.percent(f) ? String.format(Locale.ROOT, "%.0f%%", value) : String.format(Locale.ROOT, "%+.2f px", value);
-            g.drawString(font, Component.translatable("cinematic.spatial_editor." + FIELDS[f]), 10, yy, color(a * 0.9, 224, 227, 226), false);
+            String number = String.format(Locale.ROOT, "%+.2f px", value);
+            g.drawString(font, Component.translatable("cinematic.spatial_editor." + fieldKey(f)), 10, yy, color(a * 0.9, 224, 227, 226), false);
             g.drawString(font, number, 170 - font.width(number), yy, color(a, 103, 211, 231), false);
-            int end = 11 + (int) Math.round(158 * (value - Region.min(f)) / (Region.max(f) - Region.min(f)));
+            int end = 11 + (int) Math.round(158 * (value + Region.MAX) / (2 * Region.MAX));
             g.fill(11, yy + 15, 169, yy + 17, color(a * 0.14, 255, 255, 255));
             g.fill(11, yy + 15, end, yy + 17, color(a * 0.75, 103, 211, 231));
             g.fill(end - 2, yy + 12, end + 2, yy + 20, color(a, 196, 240, 245));
         }
         g.drawString(font, Component.translatable(saveError ? "cinematic.spatial_editor.save_error" : "cinematic.spatial_editor.drag_hint"),
-                10, 286, saveError ? color(a * 0.75, 255, 122, 112) : color(a * 0.75, 181, 195, 199), false);
-        button(g, font, 9, 306, 162, 16, Component.translatable("cinematic.spatial_editor.reset"), a, false);
-        button(g, font, 9, 334, 78, 18, Component.translatable("cinematic.grid_editor.save"), a, true);
-        button(g, font, 93, 334, 78, 18, Component.translatable("cinematic.grid_editor.cancel"), a, false);
+                10, HINT_Y, saveError ? color(a * 0.75, 255, 122, 112) : color(a * 0.75, 181, 195, 199), false);
+        button(g, font, 9, RESET_Y, 162, 16, Component.translatable("cinematic.spatial_editor.reset"), a, false);
+        button(g, font, 9, SAVE_Y, 78, 18, Component.translatable("cinematic.grid_editor.save"), a, true);
+        button(g, font, 93, SAVE_Y, 78, 18, Component.translatable("cinematic.grid_editor.cancel"), a, false);
         g.pose().popPose();
         for (int i = 0; i < editing.spotNames().size(); i++) {
             double[] at = Picking.toGui(Layouts.point(editing, i));
@@ -370,36 +383,39 @@ public final class LayoutPanel {
             }
         }
         if (tooltipField >= 0 && Scene.clock() - tooltipAt > 0.55) {
-            g.renderComponentTooltip(font, List.of(Component.translatable("cinematic.spatial_editor." + FIELDS[tooltipField] + ".tooltip")),
+            g.renderComponentTooltip(font, List.of(Component.translatable("cinematic.spatial_editor." + fieldKey(tooltipField) + ".tooltip")),
                     (int) mouse[0], (int) mouse[1]);
         }
     }
 
-    /** The spots' frames in the world, while the panel shows. */
+    /** A marker where each hand works, while the panel shows. */
     public static void renderWorld(LayoutScene scene, PoseStack pose, MultiBufferSource buffers, Vec3 camera) {
         if (shown < 0.01 || scene != editing) {
             return;
         }
-        Vec3 across = scene.layoutAcross(), towards = scene.layoutTowards();
         for (int i = 0; i < scene.spotNames().size(); i++) {
-            double half = 0.09 * Layouts.area(scene, i);
-            Vec3 at = Layouts.point(scene, i).add(0, 0.006, 0);
+            Vec3[] axes = Layouts.axes(scene, i);
+            Vec3 at = Layouts.point(scene, i).add(axes[2].scale(0.006));
             int alpha = (int) (shown * (region >= 0 && i != region ? 65 : 190));
-            double edge = 0.004;
-            patch(pose, buffers, camera, at, across, towards, -half, half, -half, -half + edge, alpha);
-            patch(pose, buffers, camera, at, across, towards, -half, half, half - edge, half, alpha);
-            patch(pose, buffers, camera, at, across, towards, -half, -half + edge, -half, half, alpha);
-            patch(pose, buffers, camera, at, across, towards, half - edge, half, -half, half, alpha);
+            frame(pose, buffers, camera, at, axes, new double[] {0.06, 0.06}, alpha, 103, 211, 231);
         }
     }
 
-    private static void patch(PoseStack pose, MultiBufferSource buffers, Vec3 camera, Vec3 at, Vec3 across, Vec3 towards, double x0, double x1,
-            double z0, double z1, int alpha) {
+    private static void frame(PoseStack pose, MultiBufferSource buffers, Vec3 camera, Vec3 at, Vec3[] axes, double[] half, int alpha, int r, int g, int b) {
+        double edge = 0.004;
+        patch(pose, buffers, camera, at, axes, -half[0], half[0], -half[1], -half[1] + edge, alpha, r, g, b);
+        patch(pose, buffers, camera, at, axes, -half[0], half[0], half[1] - edge, half[1], alpha, r, g, b);
+        patch(pose, buffers, camera, at, axes, -half[0], -half[0] + edge, -half[1], half[1], alpha, r, g, b);
+        patch(pose, buffers, camera, at, axes, half[0] - edge, half[0], -half[1], half[1], alpha, r, g, b);
+    }
+
+    private static void patch(PoseStack pose, MultiBufferSource buffers, Vec3 camera, Vec3 at, Vec3[] axes, double x0, double x1, double z0,
+            double z1, int alpha, int r, int g, int b) {
         VertexConsumer vertex = buffers.getBuffer(Fx.HIGHLIGHT);
         Matrix4f matrix = pose.last().pose();
         for (double[] p : new double[][] {{x0, z0}, {x1, z0}, {x1, z1}, {x0, z1}}) {
-            Vec3 v = at.add(across.scale(p[0])).add(towards.scale(p[1])).subtract(camera);
-            vertex.addVertex(matrix, (float) v.x, (float) v.y, (float) v.z).setColor(103, 211, 231, alpha);
+            Vec3 v = at.add(axes[0].scale(p[0])).add(axes[1].scale(p[1])).subtract(camera);
+            vertex.addVertex(matrix, (float) v.x, (float) v.y, (float) v.z).setColor(r, g, b, alpha);
         }
     }
 

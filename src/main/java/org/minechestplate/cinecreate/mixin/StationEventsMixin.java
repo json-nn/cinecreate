@@ -16,7 +16,7 @@ public abstract class StationEventsMixin implements CiHookMarker {
 
     @Inject(method = "onRightClickBlock", at = @At("HEAD"), cancellable = true, require = 0)
     private static void cinecreate$useRules(PlayerInteractEvent.RightClickBlock event, CallbackInfo ci) {
-        if (Bridge.leaveToCreate(event)) {
+        if (Bridge.probing() || Bridge.automated(event.getEntity()) || Bridge.leaveToCreate(event)) {
             ci.cancel();
         }
     }

@@ -22,6 +22,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.ValveMenu;
 
@@ -131,14 +132,8 @@ public class ValveScene extends CineStation<ValveMenu> {
         return hub;
     }
 
-    @Override
-    public List<Component> spotNames() {
-        return List.of(Component.translatable("cinecreate.layout.spot.readout"));
-    }
-
     /** Where the angle readout hangs: over the wheel, a little towards the player. */
-    @Override
-    public Vec3 spotBase(int spot) {
+    private Vec3 readoutAt() {
         return hub.add(side().scale(0.06)).add(up().scale(0.18));
     }
 
@@ -243,7 +238,7 @@ public class ValveScene extends CineStation<ValveMenu> {
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         ValveHandleBlockEntity valve = valve();
         if (valve != null && valve.isOverStressed()) {
             return Component.translatable("cinecreate.hint.valve_handle.overstressed");
@@ -271,7 +266,7 @@ public class ValveScene extends CineStation<ValveMenu> {
     }
 
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         boolean back = button == 1;
         int angle = shownAngle();
         // как у Create: колесо проворачивается на 90° (за 135° — на 180°), а сеть — ровно на заданный угол
@@ -476,8 +471,8 @@ public class ValveScene extends CineStation<ValveMenu> {
         Font font = mc.font;
         Component text = angleText(shownAngle());
         double pop = Anim.outBack(Anim.clamp01((Scene.clock() - readoutAt) / 0.25), 1.6);
-        float scale = (float) (0.006 * spotSize(0) * (0.7 + 0.3 * pop));
-        Vec3 at = spot(0);
+        float scale = (float) (0.006 * (0.7 + 0.3 * pop));
+        Vec3 at = readoutAt();
         pose.pushPose();
         pose.translate(at.x - camera.x, at.y - camera.y, at.z - camera.z);
         pose.mulPose(mc.gameRenderer.getMainCamera().rotation());

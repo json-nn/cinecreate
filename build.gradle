@@ -89,6 +89,8 @@ neoForge {
             systemProperty 'cinecreate.smoke', 'true'
             // a run can skip ahead to one step after the set-up: gradlew runSmoke -PsmokeFrom="build the crank"
             systemProperty 'cinecreate.smoke.from', (project.findProperty('smokeFrom') ?: '').toString()
+            // the exploratory steps instead of the smoke: gradlew runSmoke -Pexplore=true
+            systemProperty 'cinecreate.explore', (project.findProperty('explore') ?: 'false').toString()
         }
 
         server {

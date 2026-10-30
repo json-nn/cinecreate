@@ -3,6 +3,7 @@ package org.minechestplate.cinecreate.client.scene;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.dyslexic.cinematic.api.client.AddonMenuStation;
 import dev.dyslexic.cinematic.client.CameraRig;
+import dev.dyslexic.cinematic.client.EnchantFx;
 import dev.dyslexic.cinematic.client.Hands;
 import dev.dyslexic.cinematic.client.Picking;
 import dev.dyslexic.cinematic.client.Scene;
@@ -10,6 +11,7 @@ import dev.dyslexic.cinematic.station.StationKind;
 import java.util.List;
 import java.util.Locale;
 import javax.annotation.Nullable;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -189,7 +191,8 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
 
     @Override
     public final Vec3 handTarget(Vec3 target, Vec3 shoulder, boolean carrying, double tap) {
-        Vec3 want = reach(target, shoulder, carrying, tap).add(right().scale(denyShake()));
+        Vec3 want = notReady() != null ? restAt(rightOf(shoulder)) : reach(target, shoulder, carrying, tap);
+        want = want.add(right().scale(denyShake()));
         if (!Grip.inHand() || hooked()) {
             tip = null;
             return want;
@@ -262,13 +265,24 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
         drawWorld(pose, buffers, camera, light);
         DevView.drawWorld(this, aim, standSpots, pose, buffers, camera);
         LayoutPanel.renderWorld(this, pose, buffers, camera);
+        if (notReady() != null) {
+            float pulse = (float) (0.55 + 0.25 * Math.sin(Scene.clock() * 6));
+            EnchantFx.billboard(pose, buffers, Minecraft.getInstance().gameRenderer.getMainCamera(), busyAt(), 0.13, Scene.clock() * 0.6,
+                    EnchantFx.CIRCLE, pulse, pulse * 0.22f, pulse * 0.18f);
+        }
     }
 
-    // ---- layout spots (developer mode's editor); a scene with none has no editor ----
+    // ---- where the hands work (developer mode's editor); a scene with none has no editor ----
+
+    @Nullable
+    private String layoutId;
 
     @Override
     public String layoutId() {
-        return getClass().getSimpleName().replace("Scene", "").toLowerCase(Locale.ROOT);
+        if (layoutId == null) {
+            layoutId = getClass().getSimpleName().replace("Scene", "").toLowerCase(Locale.ROOT);
+        }
+        return layoutId;
     }
 
     @Override
@@ -296,20 +310,56 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
         return new Vec3(side().x, 0, side().z).normalize();
     }
 
+    @Override
+    public final Component hint() {
+        if (LayoutPanel.isOpen()) {
+            return LayoutPanel.hint();
+        }
+        Component busy = notReady();
+        return busy != null ? busy.copy().withStyle(ChatFormatting.GOLD) : sceneHint();
+    }
+
+    /**
+     * Why the scene's zone cannot be worked right now (the machine is mid-move: a raised plate, an arm out), or null.
+     * While busy, a click is refused, the hand stays back, the glow turns red and a ring marks the zone.
+     */
+    @Nullable
+    protected Component notReady() {
+        return null;
+    }
+
+    @Override
+    protected final void act(int button, boolean shift) {
+        if (notReady() != null) {
+            deny();
+            return;
+        }
+        sceneAct(button, shift);
+    }
+
+    protected abstract void sceneAct(int button, boolean shift);
+
+    /** Where the busy ring is drawn: the first hand spot, or the work. */
+    protected Vec3 busyAt() {
+        return spotNames().isEmpty() ? center() : spotBase(0);
+    }
+
+    protected abstract Component sceneHint();
+
     protected final Vec3 spot(int spot) {
         return Layouts.point(this, spot);
     }
 
-    protected final float spotSize(int spot) {
-        return Layouts.size(this, spot);
+    /** How far the editor moved the hand's spot from the scene's own. */
+    protected final Vec3 handShift(int spot) {
+        return Layouts.point(this, spot).subtract(spotBase(spot));
     }
 
-    protected final double spotArea(int spot) {
-        return Layouts.area(this, spot);
-    }
-
-    protected final double spotTurn(int spot) {
-        return Layouts.rotation(this, spot);
+    /** Whether a point lies in a square of this half-size about a centre, on the spot's surface. */
+    protected final boolean inSpot(int spot, Vec3 at, Vec3 centre, double half) {
+        Vec3[] axes = Layouts.axes(this, spot);
+        Vec3 rel = at.subtract(centre);
+        return Math.abs(rel.dot(axes[0])) <= half && Math.abs(rel.dot(axes[1])) <= half;
     }
 
     /** The scene's own state, as lines for the developer view. */

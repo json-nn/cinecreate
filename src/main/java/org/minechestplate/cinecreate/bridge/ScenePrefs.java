@@ -48,7 +48,7 @@ public final class ScenePrefs {
         }
         Map<ResourceLocation, Trigger> prefs = PLAYERS.get(player.getUUID());
         Trigger trigger = prefs == null ? null : prefs.get(kind.id());
-        return trigger == null ? Trigger.USE : trigger;
+        return trigger == null ? kind.trigger() : trigger;
     }
 
     /**

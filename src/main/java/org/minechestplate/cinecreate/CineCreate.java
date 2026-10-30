@@ -26,6 +26,7 @@ public class CineCreate {
         modEventBus.addListener(ScenePrefs::registerPayload);
         NeoForge.EVENT_BUS.addListener(ScenePrefs::forget);
         // клики, сцену по которым начинаем мы сами (пресс над депо, ступица вентиля): раньше всех остальных
+        NeoForge.EVENT_BUS.addListener(EventPriority.HIGH, Bridge::probe);
         NeoForge.EVENT_BUS.addListener(EventPriority.HIGH, Bridge::onUse);
     }
 

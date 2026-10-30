@@ -40,6 +40,7 @@ import com.simibubi.create.foundation.blockEntity.behaviour.filtering.FilteringB
 import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollValueBehaviour;
 import dev.dyslexic.cinematic.client.CameraRig;
 import dev.dyslexic.cinematic.client.MenuStation;
+import dev.dyslexic.cinematic.client.Picking;
 import dev.dyslexic.cinematic.client.Scene;
 import dev.dyslexic.cinematic.net.StationActionPayload;
 import dev.dyslexic.cinematic.station.StationKind;
@@ -211,7 +212,7 @@ public final class SmokeTest {
     private record Step(String name, int delay, Action action) {}
 
     private static final List<String> RESULTS = new ArrayList<>();
-    private static final List<Step> STEPS = List.of(
+    private static final List<Step> STEPS = Boolean.getBoolean("cinecreate.explore") ? exploreSteps() : List.of(
             new Step("set up the depot", 60, SmokeTest::setUp),
             new Step("wrench click", 30, mc -> use(mc, 1, Direction.UP)),
             new Step("wrench is left to Create", 10, mc -> {
@@ -265,6 +266,7 @@ public final class SmokeTest {
             new Step("layout edited", 6, mc -> {
                 shot(mc, "01b_layout_editor");
                 LayoutPanel.smokeSet(0, 0, 4.0);
+                Layouts.smokeSettle();
                 Vec3 moved = Layouts.point(scene(), 0).subtract(SmokeTest.plateBefore);
                 scene().hover();
                 Path saved = FMLPaths.CONFIGDIR.get().resolve("cinecreate-layouts.json");
@@ -272,7 +274,17 @@ public final class SmokeTest {
                         + String.format(Locale.ROOT, "%.3f", moved.dot(scene().layoutAcross())) + ")",
                         Math.abs(moved.dot(scene().layoutAcross()) - 0.25) < 1e-6 && scene().aim.distanceTo(Layouts.point(scene(), 0)) < 1e-6
                                 && !LayoutPanel.isOpen() && Files.exists(saved));
+                LayoutPanel.open();
+                LayoutPanel.smokeSet(0, 2, 2.0);
+                Layouts.smokeSettle();
+                scene().hover();
+                Vec3 hand = Layouts.point(scene(), 0).subtract(SmokeTest.plateBefore);
+                check("the hand's height too: 2 px up, the hand goes there, and the plate Create puts the stack on stays ("
+                        + String.format(Locale.ROOT, "%.3f up", hand.y) + ")",
+                        Math.abs(hand.y - 0.125) < 1e-6 && scene().aim.distanceTo(Layouts.point(scene(), 0)) < 1e-6
+                                && scene().spotBase(0).distanceTo(SmokeTest.plateBefore) < 1e-6);
                 LayoutPanel.smokeReset();
+                Layouts.smokeSettle();
                 check("reset, the plate spot is back where it was", Layouts.point(scene(), 0).distanceTo(SmokeTest.plateBefore) < 1e-6);
                 LayoutPanel.smokeForce = false;
                 DepotScene.smokePin = false;
@@ -1433,6 +1445,18 @@ public final class SmokeTest {
                 return true;
             }),
             new Step("left the deploying", 0, mc -> Scene.phase == Scene.Phase.NONE),
+            // фальшивый игрок активатора жмёт ПКМ по нашему блоку: обработчик CI читал его соединение и ронял сервер
+            new Step("a deployer clicks an empty depot", 2, mc -> onServer(mc, player -> {
+                emptyDepot(player, DEPLOYING_DEPOT);
+                deployerHolds(player, DOWN_DEPLOYER, new ItemStack(Items.STICK));
+                return deployerMotor(player, 64);
+            })),
+            new Step("the deployer clicked", 100, mc -> {
+                ItemStack held = deployerHeld(mc, DOWN_DEPLOYER);
+                check("a deployer's fake player right-clicking one of our blocks is Create's own click, and the server keeps running (it holds "
+                        + held + ")", held.is(Items.STICK));
+                return onServer(mc, player -> deployerMotor(player, 0));
+            }),
             new Step("to the deployer's hand", 2, mc -> onServer(mc, player -> wave2Kit(player)
                     && deployerHolds(player, HANDOFF_DEPLOYER, new ItemStack(Items.FLINT)) && standBefore(player, HANDOFF_DEPLOYER, 1.3))),
             new Step("right-click the deployer's hand", 4, mc -> use(mc, EMPTY_HAND, HANDOFF_DEPLOYER, Direction.NORTH)),
@@ -1734,10 +1758,20 @@ public final class SmokeTest {
                 SmokeTest.launchCamera = camera == null ? null : camera.pos();
                 check("the plate snaps and throws the iron; the player stays put (no free camera) and watches it",
                         ejectorScene().launches == 1 && !ejectorScene().freeCamera());
+                // площадка поднята: зона занята — клик не кладёт, подсказка говорит почему
+                SmokeTest.busyHint = scene().hint().getString();
+                scene().hover();
+                scene().click(0, false);
                 return true;
             }),
             new Step("watching", 6, mc -> {
                 shot(mc, "40_ejector_watch");
+                ItemStack onPlate = onServer(mc, p -> {
+                    DepotBehaviour depot = BlockEntityBehaviour.get(p.serverLevel(), EJECTOR, DepotBehaviour.TYPE);
+                    return depot == null ? ItemStack.EMPTY : depot.getHeldItemStack().copy();
+                });
+                check("while the plate is up the zone is busy: the hint says so, and a click puts nothing on it (\"" + SmokeTest.busyHint
+                        + "\", server: " + onPlate + ")", SmokeTest.busyHint.startsWith("The plate is up") && onPlate.isEmpty());
                 return true;
             }),
             new Step("landed", 0, mc -> {
@@ -2495,6 +2529,10 @@ public final class SmokeTest {
     public static void register(IEventBus bus) {
         bus.addListener(SmokeTest::onTick);
         bus.addListener(SmokeTest::onRenderLevel);
+        if (Boolean.getBoolean("cinecreate.explore")) {
+            bus.addListener(net.neoforged.bus.api.EventPriority.HIGHEST, false,
+                    net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock.class, SmokeTest::claim);
+        }
     }
 
     /**
@@ -2924,6 +2962,8 @@ public final class SmokeTest {
     }
 
     private static Vec3 farFrom, plateBefore;
+    private static boolean xPiecesLeft;
+    private static String busyHint = "";
     private static BlockPos farClicked = BlockPos.ZERO;
     private static int farWait;
 
@@ -3558,5 +3598,920 @@ public final class SmokeTest {
         }
         CineCreate.LOGGER.info("[cinecreate smoke] done: {}", RESULTS.get(RESULTS.size() - 1));
         mc.stop();
+    }
+
+    // ---- exploratory steps (-Dcinecreate.explore=true: gradlew runSmoke -Pexplore=true) ---------------------------
+    // Each block of steps builds its own rig on the row z = 14 (clear of the smoke's rigs), sets up one situation the
+    // smoke never plays (a machine mid-move, a claim, a block replaced, a walk round...), drives real clicks, keys and
+    // cursor moves, and checks the outcome: what the server holds and what the player sees. PASS = the mod behaves right.
+
+    private static final int XZ = 14;
+    private static final BlockPos X_SAW = new BlockPos(20, -60, XZ), X_BASIN = new BlockPos(14, -60, XZ),
+            X_MIX_BASIN = new BlockPos(8, -60, XZ), X_CLAIM = new BlockPos(-8, -60, XZ), X_DRAIN = new BlockPos(-14, -60, XZ),
+            X_REPL = new BlockPos(-20, -60, XZ), X_PRESS_DEPOT = new BlockPos(26, -60, XZ), X_SPOUT_DEPOT = new BlockPos(32, -60, XZ),
+            X_DEP_DEPOT = new BlockPos(38, -60, XZ), X_MILL = new BlockPos(44, -60, XZ);
+    private static final java.util.Set<BlockPos> CLAIMED = new java.util.HashSet<>();
+    private static volatile boolean claimOn;
+    private static int xBefore, xBefore2, xWait;
+    private static double xValue;
+    private static boolean xFlag;
+    private static String xNote = "";
+
+    /** A claim mod's rule, as most have it: right-clicks on a claimed block are cancelled (both sides). */
+    private static void claim(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock event) {
+        if (claimOn && CLAIMED.contains(event.getPos())) {
+            event.setCanceled(true);
+            event.setCancellationResult(net.minecraft.world.InteractionResult.FAIL);
+        }
+    }
+
+    private static Vec3 xTop(BlockPos pos) {
+        return Vec3.atBottomCenterOf(pos).add(0, SceneBlocks.DEPOT_TOP, 0);
+    }
+
+    private static void xClear(ServerLevel level, int x0, int y0, int z0, int x1, int y1, int z1) {
+        for (BlockPos at : BlockPos.betweenClosed(x0, y0, z0, x1, y1, z1)) {
+            if (level.getBlockEntity(at) instanceof BasinBlockEntity basin) {
+                basin.clearContent();
+            }
+            DepotBehaviour depot = BlockEntityBehaviour.get(level, at, DepotBehaviour.TYPE);
+            if (depot != null) {
+                depot.removeHeldItem();
+                for (int i = 1; i < depot.itemHandler.getSlots(); i++) {
+                    depot.itemHandler.extractItem(i, 64, false);
+                }
+            }
+            level.setBlockAndUpdate(at, Blocks.AIR.defaultBlockState());
+        }
+        level.getEntitiesOfClass(ItemEntity.class, new AABB(x0 - 3, y0 - 2, z0 - 3, x1 + 4, y1 + 3, z1 + 4)).forEach(Entity::discard);
+    }
+
+    private static boolean xKit(ServerPlayer player, ItemStack... stacks) {
+        player.getInventory().clearContent();
+        player.containerMenu.setCarried(ItemStack.EMPTY);
+        for (int i = 0; i < stacks.length; i++) {
+            player.getInventory().setItem(i, stacks[i]);
+        }
+        player.getInventory().selected = 8;
+        player.inventoryMenu.broadcastChanges();
+        return true;
+    }
+
+    private static void xDepot(ServerLevel level, BlockPos pos, ItemStack stack) {
+        DepotBehaviour depot = BlockEntityBehaviour.get(level, pos, DepotBehaviour.TYPE);
+        if (depot != null) {
+            depot.setCenteredHeldItem(new com.simibubi.create.content.kinetics.belt.transport.TransportedItemStack(stack));
+            depot.blockEntity.notifyUpdate();
+        }
+    }
+
+    private static ItemStack xDepotHeld(ServerPlayer player, BlockPos pos) {
+        DepotBehaviour depot = BlockEntityBehaviour.get(player.serverLevel(), pos, DepotBehaviour.TYPE);
+        return depot == null ? ItemStack.EMPTY : depot.getHeldItemStack().copy();
+    }
+
+    /** What the player has of an item: the inventory and what the open menu's cursor (the scene's hand) carries. */
+    private static int xCount(ServerPlayer player, Item item) {
+        ItemStack carried = player.containerMenu.getCarried();
+        return player.getInventory().countItem(item) + (carried.is(item) ? carried.getCount() : 0);
+    }
+
+    private static int xTotal(ServerPlayer player) {
+        int total = 0;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            total += player.getInventory().getItem(i).getCount();
+        }
+        return total + player.containerMenu.getCarried().getCount();
+    }
+
+    private static String xPieces(com.simibubi.create.content.kinetics.saw.SawBlockEntity saw) {
+        StringBuilder said = new StringBuilder();
+        for (int i = 0; i < saw.inventory.getSlots(); i++) {
+            if (!saw.inventory.getStackInSlot(i).isEmpty()) {
+                said.append("slot ").append(i).append(": ").append(saw.inventory.getStackInSlot(i)).append("; ");
+            }
+        }
+        return said.toString();
+    }
+
+    private static int xFluid(ServerPlayer player, BlockPos pos) {
+        IFluidHandler tanks = player.serverLevel().getCapability(Capabilities.FluidHandler.BLOCK, pos, null);
+        int amount = 0;
+        for (int i = 0; tanks != null && i < tanks.getTanks(); i++) {
+            amount += tanks.getFluidInTank(i).getAmount();
+        }
+        return amount;
+    }
+
+    /** The CI MenuStation refused a click within the last second (its protected denyAt). */
+    private static boolean xDenied() {
+        try {
+            java.lang.reflect.Field field = MenuStation.class.getDeclaredField("denyAt");
+            field.setAccessible(true);
+            return Scene.clock() - field.getDouble(Scene.station) < 1.0;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Where CI draws a hand this frame (its private Hands.position), or null. */
+    @Nullable
+    private static Vec3 xHand(boolean right) {
+        try {
+            java.lang.reflect.Method method = Class.forName("dev.dyslexic.cinematic.client.Hands").getDeclaredMethod("position", boolean.class);
+            method.setAccessible(true);
+            return (Vec3) method.invoke(null, right);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static Vec3 xCamera() {
+        CameraRig.Pose pose = CameraRig.last();
+        return pose == null ? Vec3.ZERO : pose.pos();
+    }
+
+    private static String xFmt(@Nullable Vec3 v) {
+        return v == null ? "-" : String.format(Locale.ROOT, "(%.2f, %.2f, %.2f)", v.x, v.y, v.z);
+    }
+
+    /** The real mouse put at this GUI point (CI moves the scene's cursor to it on the next frame). */
+    private static void xMouse(Minecraft mc, double guiX, double guiY) {
+        try {
+            java.lang.reflect.Field x = net.minecraft.client.MouseHandler.class.getDeclaredField("xpos");
+            java.lang.reflect.Field y = net.minecraft.client.MouseHandler.class.getDeclaredField("ypos");
+            x.setAccessible(true);
+            y.setAccessible(true);
+            x.setDouble(mc.mouseHandler, guiX * mc.getWindow().getScreenWidth() / mc.getWindow().getGuiScaledWidth());
+            y.setDouble(mc.mouseHandler, guiY * mc.getWindow().getScreenHeight() / mc.getWindow().getGuiScaledHeight());
+        } catch (ReflectiveOperationException e) {
+            CineCreate.LOGGER.warn("[explore] cannot move the mouse", e);
+        }
+    }
+
+    private static void xFace(Minecraft mc, Vec3 at) {
+        Vec3 look = at.subtract(mc.player.getEyePosition());
+        mc.player.setYRot((float) Math.toDegrees(Math.atan2(-look.x, look.z)));
+        mc.player.setXRot((float) -Math.toDegrees(Math.atan2(look.y, Math.hypot(look.x, look.z))));
+    }
+
+    /** The drain's held item: where it rolls (Create's insertedFrom is the side it leaves by) and how far, or null. */
+    @Nullable
+    private static String xDrainHeld(ServerPlayer player, BlockPos pos) {
+        if (!(player.serverLevel().getBlockEntity(pos) instanceof com.simibubi.create.content.fluids.drain.ItemDrainBlockEntity drain)) {
+            return null;
+        }
+        try {
+            java.lang.reflect.Field field = com.simibubi.create.content.fluids.drain.ItemDrainBlockEntity.class.getDeclaredField("heldItem");
+            field.setAccessible(true);
+            Object held = field.get(drain);
+            if (held instanceof com.simibubi.create.content.kinetics.belt.transport.TransportedItemStack t) {
+                return t.stack + " leaving by " + t.insertedFrom.getSerializedName() + " at " + String.format(Locale.ROOT, "%.2f", t.beltPosition);
+            }
+            return null;
+        } catch (ReflectiveOperationException e) {
+            return "?";
+        }
+    }
+
+    private static String xItemsNear(ServerPlayer player, BlockPos pos) {
+        StringBuilder said = new StringBuilder();
+        for (ItemEntity item : player.serverLevel().getEntitiesOfClass(ItemEntity.class, new AABB(pos).inflate(4))) {
+            said.append(item.getItem()).append(" at ").append(xFmt(item.position().subtract(Vec3.atCenterOf(pos)))).append("; ");
+        }
+        return said.toString();
+    }
+
+    /** A bucket lies on the ground on this side of the block (rolled off toward a player standing there). */
+    private static boolean xBucketOn(ServerPlayer player, BlockPos pos, Direction side) {
+        Vec3 out = Vec3.atLowerCornerOf(side.getNormal());
+        return !player.serverLevel().getEntitiesOfClass(ItemEntity.class, new AABB(pos).inflate(3),
+                item -> item.getItem().is(Items.BUCKET) && item.position().subtract(Vec3.atCenterOf(pos)).dot(out) > 0.3).isEmpty();
+    }
+
+    private static BlockPos xMotorOf(ServerLevel level, BlockPos machine) {
+        BlockState state = level.getBlockState(machine);
+        return machine.relative(Direction.get(Direction.AxisDirection.POSITIVE, ((IRotate) state.getBlock()).getRotationAxis(state)));
+    }
+
+    private static boolean xActive(Class<?> type) {
+        return Scene.phase == Scene.Phase.ACTIVE && type.isInstance(Scene.station);
+    }
+
+    private static List<Step> exploreSteps() {
+        return List.of(
+                new Step("set up the depot", 60, SmokeTest::setUp),
+
+                // ---- A: the saw's cut pieces left on the table (outputs blocked by full depots) ----
+                new Step("x saw: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.SAW, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        xClear(level, X_SAW.getX() - 3, -60, XZ - 3, X_SAW.getX() + 3, -56, XZ + 3);
+                        level.setBlockAndUpdate(X_SAW, AllBlocks.MECHANICAL_SAW.getDefaultState().setValue(BlockStateProperties.FACING, Direction.UP));
+                        motorAlong(level, X_SAW, SAW_RPM);
+                        Vec3 along = level.getBlockEntity(X_SAW) instanceof com.simibubi.create.content.kinetics.saw.SawBlockEntity saw
+                                ? saw.getItemMovementVec() : new Vec3(1, 0, 0);
+                        BlockPos a = X_SAW.offset((int) Math.signum(along.x), 0, (int) Math.signum(along.z));
+                        BlockPos b = X_SAW.offset(-(int) Math.signum(along.x), 0, -(int) Math.signum(along.z));
+                        for (BlockPos end : List.of(a, b)) {
+                            if (level.getBlockState(end).isAir()) {
+                                level.setBlockAndUpdate(end, AllBlocks.DEPOT.getDefaultState());
+                                xDepot(level, end, new ItemStack(Items.DIRT, 64));
+                            }
+                        }
+                        CineCreate.LOGGER.info("[explore] saw moves items along {}; full depots at {} and {}", along, a, b);
+                        FilteringBehaviour filter = BlockEntityBehaviour.get(level, X_SAW, FilteringBehaviour.TYPE);
+                        if (filter != null) {
+                            filter.setFilter(new ItemStack(Items.STONE_BRICKS));
+                        }
+                        return xKit(p, new ItemStack(Items.STONE, 4)) && standBefore(p, X_SAW, 1.6);
+                    });
+                }),
+                new Step("x saw: right-click", 6, mc -> use(mc, 8, X_SAW, Direction.UP)),
+                new Step("x saw: scene", 0, mc -> {
+                    if (!xActive(SawScene.class)) {
+                        return false;
+                    }
+                    SawScene.smokePin = true;
+                    pickUp(mc, 0);
+                    return true;
+                }),
+                new Step("x saw: lay the stone", 8, mc -> {
+                    sawScene().hoverTable();
+                    sawScene().click(0, false);
+                    return true;
+                }),
+                new Step("x saw: cut", 0, mc -> onServer(mc, p -> p.serverLevel().getBlockEntity(X_SAW)
+                        instanceof com.simibubi.create.content.kinetics.saw.SawBlockEntity saw
+                        && saw.inventory.appliedRecipe && saw.inventory.getStackInSlot(0).isEmpty() && !saw.inventory.isEmpty())),
+                new Step("x saw: pieces stay", 60, mc -> {
+                    String pieces = onServer(mc, p -> p.serverLevel().getBlockEntity(X_SAW)
+                            instanceof com.simibubi.create.content.kinetics.saw.SawBlockEntity saw ? xPieces(saw) : "");
+                    boolean clientEmpty = sawScene().slot(org.minechestplate.cinecreate.bridge.SawMenu.TABLE).isEmpty();
+                    sawScene().hoverTable();
+                    shot(mc, "x01_saw_pieces_on_table");
+                    CineCreate.LOGGER.info("[explore] saw holds (server) {}; the scene's table slot is empty: {}; tooltip {}", pieces, clientEmpty,
+                            sawScene().tooltip(ItemStack.EMPTY));
+                    check("x saw: pieces that cannot leave stay on the table (server: " + pieces + "), the scene's table slot reads empty: "
+                            + clientEmpty, !pieces.isEmpty());
+                    // the saw took one stone (its slot holds one when bulk cutting is off): the rest goes back, the hand is empty
+                    pickUp(mc, 0);
+                    SmokeTest.xNote = "carried before the click: " + carried(mc);
+                    return true;
+                }),
+                new Step("x saw: empty-handed click", 6, mc -> {
+                    SmokeTest.xNote += ", at the click: " + carried(mc);
+                    SmokeTest.xBefore = onServer(mc, SmokeTest::xTotal);
+                    sawScene().hoverTable();
+                    sawScene().click(0, false);
+                    SmokeTest.xFlag = sawScene().moving();
+                    SmokeTest.xBefore2 = xDenied() ? 1 : 0;
+                    return true;
+                }),
+                new Step("x saw: empty hand on the pieces", 30, mc -> {
+                    String pieces = onServer(mc, p -> p.serverLevel().getBlockEntity(X_SAW)
+                            instanceof com.simibubi.create.content.kinetics.saw.SawBlockEntity saw ? xPieces(saw) : "");
+                    int got = onServer(mc, SmokeTest::xTotal) - SmokeTest.xBefore;
+                    check("x saw: an empty hand on the table takes the cut pieces, as Create's own empty-handed click does (" + SmokeTest.xNote
+                            + "; a move started: " + SmokeTest.xFlag + ", refused: " + (SmokeTest.xBefore2 == 1) + "; server: the saw still holds "
+                            + pieces + "; the player got " + got + " items)", got > 0);
+                    SawScene.smokePin = false;
+                    Scene.leave();
+                    return true;
+                }),
+                new Step("x saw: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+                new Step("x saw: Create's own click", 4, mc -> {
+                    ClientConfig.set(SceneKinds.SAW, Trigger.KEY);
+                    SmokeTest.xBefore = onServer(mc, SmokeTest::xTotal);
+                    // осталось ли что брать: сцена теперь сама забирает куски
+                    SmokeTest.xPiecesLeft = onServer(mc, p -> p.serverLevel().getBlockEntity(X_SAW)
+                            instanceof com.simibubi.create.content.kinetics.saw.SawBlockEntity saw && !xPieces(saw).isEmpty());
+                    return true;
+                }),
+                new Step("x saw: right-click as Create", 10, mc -> use(mc, 8, X_SAW, Direction.UP)),
+                new Step("x saw: Create took them", 10, mc -> {
+                    int got = onServer(mc, SmokeTest::xTotal) - SmokeTest.xBefore;
+                    check("x saw (control): Create's own empty-handed click takes what pieces are left (left before: " + SmokeTest.xPiecesLeft
+                            + ", the player got " + got + " items)", !SmokeTest.xPiecesLeft || got > 0);
+                    ClientConfig.set(SceneKinds.SAW, Trigger.USE);
+                    onServer(mc, p -> {
+                        motorSpeed(p.serverLevel(), xMotorOf(p.serverLevel(), X_SAW), 0);
+                        return true;
+                    });
+                    return true;
+                }),
+
+                // ---- B: an empty bucket dipped into a basin with less than a bucket of water ----
+                new Step("x basin: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.BASIN, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        xClear(level, X_BASIN.getX() - 2, -60, XZ - 3, X_BASIN.getX() + 2, -56, XZ + 2);
+                        level.setBlockAndUpdate(X_BASIN, AllBlocks.BASIN.getDefaultState());
+                        IFluidHandler tanks = level.getCapability(Capabilities.FluidHandler.BLOCK, X_BASIN, null);
+                        int in = tanks == null ? -1 : tanks.fill(new FluidStack(Fluids.WATER, 250), IFluidHandler.FluidAction.EXECUTE);
+                        CineCreate.LOGGER.info("[explore] basin filled with {} mB", in);
+                        return xKit(p, new ItemStack(Items.BUCKET), new ItemStack(Items.GLASS_BOTTLE)) && standBefore(p, X_BASIN, 1.6);
+                    });
+                }),
+                new Step("x basin: right-click", 6, mc -> use(mc, 8, X_BASIN, Direction.UP)),
+                new Step("x basin: scene", 0, mc -> {
+                    if (!xActive(BasinScene.class)) {
+                        return false;
+                    }
+                    BasinScene.smokePin = true;
+                    pickUp(mc, 0);
+                    return true;
+                }),
+                new Step("x basin: dip the bucket", 8, mc -> {
+                    SmokeTest.xBefore = basinScene().pours;
+                    SmokeTest.xBefore2 = basinScene().denials;
+                    basinClick();
+                    return true;
+                }),
+                new Step("x basin: dipping", 8, mc -> {
+                    shot(mc, "x02_basin_bucket_dip");
+                    return true;
+                }),
+                new Step("x basin: dipped", 0, mc -> {
+                    if (moving()) {
+                        return false;
+                    }
+                    int fluid = onServer(mc, p -> xFluid(p, X_BASIN));
+                    int water = onServer(mc, p -> xCount(p, Items.WATER_BUCKET));
+                    int played = basinScene().pours - SmokeTest.xBefore, refused = basinScene().denials - SmokeTest.xBefore2;
+                    // что видит игрок: ни движения налива, ни налитого ведра (как отказ показан — дело сцены)
+                    check("x basin: an empty bucket dipped into 250 mB (Create fills a bucket only from 1000) is not played as a fill"
+                            + " (fill moves played " + played + ", refusals " + refused + "; server: basin " + fluid + " mB, water buckets "
+                            + water + ", hand " + carried(mc) + ")", played == 0 && fluid == 250 && water == 0);
+                    BasinScene.smokePin = false;
+                    Scene.leave();
+                    return true;
+                }),
+                new Step("x basin: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+
+                // ---- C: the basin's watch camera under a mixer set in a frame (a casing beside the mixer, on the player's side) ----
+                new Step("x mixer: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.BASIN, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        BlockPos mixer = X_MIX_BASIN.above(2);
+                        xClear(level, X_MIX_BASIN.getX() - 2, -60, XZ - 3, X_MIX_BASIN.getX() + 2, -55, XZ + 2);
+                        level.setBlockAndUpdate(X_MIX_BASIN, AllBlocks.BASIN.getDefaultState());
+                        level.setBlockAndUpdate(mixer, AllBlocks.MECHANICAL_MIXER.getDefaultState());
+                        level.setBlockAndUpdate(mixer.north(), AllBlocks.ANDESITE_CASING.getDefaultState());
+                        level.setBlockAndUpdate(mixer.east(), AllBlocks.COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
+                        level.setBlockAndUpdate(mixer.east().above(), AllBlocks.CREATIVE_MOTOR.getDefaultState()
+                                .setValue(BlockStateProperties.FACING, Direction.DOWN));
+                        motorSpeed(level, mixer.east().above(), MIXER_RPM);
+                        return xKit(p, new ItemStack(Items.ANDESITE), new ItemStack(Items.IRON_NUGGET)) && standBefore(p, X_MIX_BASIN, 1.6);
+                    });
+                }),
+                new Step("x mixer: right-click", 6, mc -> use(mc, 8, X_MIX_BASIN, Direction.UP)),
+                new Step("x mixer: scene", 0, mc -> {
+                    if (!xActive(BasinScene.class)) {
+                        return false;
+                    }
+                    Vec3 cam = xCamera();
+                    CineCreate.LOGGER.info("[explore] basin camera at the start {} in {}", xFmt(cam), mc.level.getBlockState(BlockPos.containing(cam)));
+                    BasinScene.smokePin = true;
+                    pickUp(mc, 0);
+                    return true;
+                }),
+                new Step("x mixer: drop the andesite", 8, mc -> {
+                    basinClick();
+                    return true;
+                }),
+                new Step("x mixer: nugget in hand", 0, mc -> {
+                    if (moving()) {
+                        return false;
+                    }
+                    pickUp(mc, 1);
+                    return true;
+                }),
+                new Step("x mixer: drop the nugget", 8, mc -> {
+                    basinClick();
+                    return true;
+                }),
+                new Step("x mixer: mixing", 0, mc -> basinScene().mixing()),
+                new Step("x mixer: watching", 18, mc -> {
+                    Vec3 cam = xCamera();
+                    BlockPos at = BlockPos.containing(cam);
+                    BlockState state = mc.level.getBlockState(at);
+                    shot(mc, "x03_mixer_watch_camera");
+                    CineCreate.LOGGER.info("[explore] basin watch camera {} in {} at {}", xFmt(cam), state, at);
+                    check("x mixer: while the mixer works, the basin's watch camera stays out of blocks (camera " + xFmt(cam) + " in "
+                            + state.getBlock().getName().getString() + " at " + at.toShortString() + ")", state.getCollisionShape(mc.level, at).isEmpty());
+                    BasinScene.smokePin = false;
+                    Scene.leave();
+                    return true;
+                }),
+                new Step("x mixer: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+
+                // ---- D: a depot in a claim (a mod that cancels RightClickBlock there) ----
+                new Step("x claim: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.DEPOT, Trigger.KEY);
+                    SmokeTest.CLAIMED.add(X_CLAIM);
+                    SmokeTest.claimOn = true;
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        xClear(level, X_CLAIM.getX() - 2, -60, XZ - 3, X_CLAIM.getX() + 2, -57, XZ + 2);
+                        level.setBlockAndUpdate(X_CLAIM, AllBlocks.DEPOT.getDefaultState());
+                        xDepot(level, X_CLAIM, new ItemStack(Items.GOLD_INGOT, 16));
+                        return xKit(p) && standBefore(p, X_CLAIM, 1.6);
+                    });
+                }),
+                new Step("x claim: right-click", 10, mc -> use(mc, 8, X_CLAIM, Direction.UP, xTop(X_CLAIM))),
+                new Step("x claim: the claim holds a right-click", 10, mc -> {
+                    int gold = onServer(mc, p -> xCount(p, Items.GOLD_INGOT));
+                    ItemStack on = onServer(mc, p -> xDepotHeld(p, X_CLAIM));
+                    check("x claim (control): a right-click on a claimed depot does nothing (player " + gold + " gold, depot " + on + ")",
+                            gold == 0 && on.getCount() == 16 && !Scene.active());
+                    Scene.abort();
+                    xFace(mc, xTop(X_CLAIM));
+                    return true;
+                }),
+                new Step("x claim: H", 10, mc -> {
+                    xFace(mc, xTop(X_CLAIM));
+                    SmokeTest.xNote = "invited " + WorkKey.invited();
+                    SmokeTest.xWait = 0;
+                    SmokeTest.xFlag = false;
+                    KeyMapping.click(WorkKey.WORK.getKey());
+                    return true;
+                }),
+                new Step("x claim: key scene", 0, mc -> {
+                    // сцена может и не начаться (отказ): тогда через 3 с дальше, проверка — по предметам на сервере
+                    if (!xActive(DepotScene.class)) {
+                        return ++SmokeTest.xWait > 60 && Scene.phase == Scene.Phase.NONE;
+                    }
+                    SmokeTest.xFlag = true;
+                    DepotScene.smokePin = true;
+                    scene().hover();
+                    scene().click(0, false);
+                    return true;
+                }),
+                new Step("x claim: taken", 12, mc -> {
+                    if (moving()) {
+                        return false;
+                    }
+                    int gold = onServer(mc, p -> xCount(p, Items.GOLD_INGOT));
+                    ItemStack on = onServer(mc, p -> xDepotHeld(p, X_CLAIM));
+                    shot(mc, "x04_claim_key_take");
+                    check("x claim: the work key cannot take a claimed depot's items (" + SmokeTest.xNote + ", scene began: " + SmokeTest.xFlag
+                            + "; server: player " + gold + " gold, depot " + on + ")", gold == 0 && on.getCount() == 16);
+                    DepotScene.smokePin = false;
+                    if (Scene.active()) {
+                        Scene.leave();
+                    }
+                    return true;
+                }),
+                new Step("x claim: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+                new Step("x claim: window request", 6, mc -> {
+                    onServer(mc, p -> {
+                        xDepot(p.serverLevel(), X_CLAIM, new ItemStack(Items.GOLD_INGOT, 16));
+                        return xKit(p);
+                    });
+                    mc.player.getInventory().selected = 8;
+                    mc.getConnection().send(new ServerboundSetCarriedItemPacket(8));
+                    PacketDistributor.sendToServer(new StationActionPayload(X_CLAIM, StationKind.ADDON, StationActionPayload.Action.WINDOW, 0, 0, false, 0));
+                    return true;
+                }),
+                new Step("x claim: window request taken", 10, mc -> {
+                    int gold = onServer(mc, p -> xCount(p, Items.GOLD_INGOT));
+                    ItemStack on = onServer(mc, p -> xDepotHeld(p, X_CLAIM));
+                    check("x claim: CI's window request (the scene's fallback packet) cannot take a claimed depot's items (server: player "
+                            + gold + " gold, depot " + on + ")", gold == 0 && on.getCount() == 16);
+                    SmokeTest.claimOn = false;
+                    ClientConfig.set(SceneKinds.DEPOT, Trigger.USE);
+                    return true;
+                }),
+
+                // ---- E: an Item Drain whose front is blocked: CI walks the player round to another side ----
+                new Step("x drain: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.DRAIN, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        xClear(level, X_DRAIN.getX() - 3, -60, XZ - 4, X_DRAIN.getX() + 3, -57, XZ + 3);
+                        level.setBlockAndUpdate(X_DRAIN, AllBlocks.ITEM_DRAIN.getDefaultState());
+                        level.setBlockAndUpdate(X_DRAIN.north(), Blocks.STONE.defaultBlockState());
+                        xKit(p, new ItemStack(Items.WATER_BUCKET));
+                        p.teleportTo(level, X_DRAIN.getX() + 0.5, -60, X_DRAIN.getZ() - 2.4, 0f, 25f);
+                        return true;
+                    });
+                }),
+                new Step("x drain: right-click", 6, mc -> use(mc, 8, X_DRAIN, Direction.UP)),
+                new Step("x drain: scene", 0, mc -> {
+                    if (!xActive(DrainScene.class)) {
+                        return false;
+                    }
+                    Direction side = Scene.station.sideDirection();
+                    CineCreate.LOGGER.info("[explore] drain scene worked from {} at {}", side, xFmt(mc.player.position()));
+                    DrainScene.smokePin = true;
+                    pickUp(mc, 0);
+                    return true;
+                }),
+                new Step("x drain: lay the bucket", 8, mc -> {
+                    drainScene().hover();
+                    drainScene().click(0, false);
+                    return true;
+                }),
+                new Step("x drain: drained", 0, mc -> onServer(mc, p -> p.serverLevel().getBlockEntity(X_DRAIN)
+                        instanceof com.simibubi.create.content.fluids.drain.ItemDrainBlockEntity drain && drain.getHeldItemStack().is(Items.BUCKET))),
+                new Step("x drain: where the bucket went", 60, mc -> {
+                    Direction side = Scene.station == null ? null : Scene.station.sideDirection();
+                    String held = onServer(mc, p -> xDrainHeld(p, X_DRAIN));
+                    String near = onServer(mc, p -> xItemsNear(p, X_DRAIN));
+                    int buckets = onServer(mc, p -> xCount(p, Items.BUCKET));
+                    boolean onSide = side != null && onServer(mc, p -> xBucketOn(p, X_DRAIN, side));
+                    int caught = Scene.station instanceof DrainScene drain ? drain.caught : -1;
+                    shot(mc, "x05_drain_bucket_rolled");
+                    CineCreate.LOGGER.info("[explore] drain: worked from {}, held {}, items near {}, player buckets {}, caught {}", side, held, near,
+                            buckets, caught);
+                    check("x drain: the drained bucket rolls off toward the side the player works from (" + side + "): on the drain " + held
+                            + "; items near " + near + "; the player has " + buckets + " bucket(s); the scene counted " + caught
+                            + " catch(es)", held == null && (buckets == 1 || onSide));
+                    DrainScene.smokePin = false;
+                    if (Scene.active()) {
+                        Scene.leave();
+                    }
+                    return true;
+                }),
+                new Step("x drain: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+
+                // ---- F: the depot replaced (broken and set again) while the player is in its scene ----
+                new Step("x replaced: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.DEPOT, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        xClear(level, X_REPL.getX() - 2, -60, XZ - 3, X_REPL.getX() + 2, -57, XZ + 2);
+                        level.setBlockAndUpdate(X_REPL, AllBlocks.DEPOT.getDefaultState());
+                        return xKit(p, new ItemStack(Items.GOLD_INGOT, 16)) && standBefore(p, X_REPL, 1.6);
+                    });
+                }),
+                new Step("x replaced: right-click", 6, mc -> use(mc, 8, X_REPL, Direction.UP, xTop(X_REPL))),
+                new Step("x replaced: scene", 0, mc -> {
+                    if (!xActive(DepotScene.class)) {
+                        return false;
+                    }
+                    DepotScene.smokePin = true;
+                    pickUp(mc, 0);
+                    return true;
+                }),
+                new Step("x replaced: the depot is replaced", 8, mc -> onServer(mc, p -> {
+                    renew(p.serverLevel(), X_REPL, AllBlocks.DEPOT.getDefaultState());
+                    return true;
+                })),
+                new Step("x replaced: set down", 10, mc -> {
+                    boolean menu = onServer(mc, p -> p.containerMenu instanceof DepotMenu);
+                    CineCreate.LOGGER.info("[explore] after the replacement: scene {}, the server's depot menu still open {}", Scene.phase, menu);
+                    SmokeTest.xFlag = xActive(DepotScene.class);
+                    if (!SmokeTest.xFlag) {
+                        return true;
+                    }
+                    scene().hover();
+                    scene().click(0, false);
+                    return true;
+                }),
+                new Step("x replaced: set down where", 14, mc -> {
+                    if (moving()) {
+                        return false;
+                    }
+                    ItemStack on = onServer(mc, p -> xDepotHeld(p, X_REPL));
+                    int gold = onServer(mc, p -> xCount(p, Items.GOLD_INGOT));
+                    String slot = xActive(DepotScene.class) ? scene().slot(DepotMenu.MAIN).toString() : "-";
+                    shot(mc, "x06_replaced_depot_set_down");
+                    check("x replaced: a stack set down after the depot was replaced mid-scene lies on the depot standing there (scene went on: "
+                            + SmokeTest.xFlag + "; server: depot " + on + ", player " + gold + " gold; the scene's slot " + slot + ")",
+                            !SmokeTest.xFlag || on.getCount() == 16);
+                    DepotScene.smokePin = false;
+                    Scene.leave();
+                    return true;
+                }),
+                new Step("x replaced: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+                new Step("x replaced: after leaving", 10, mc -> {
+                    ItemStack on = onServer(mc, p -> xDepotHeld(p, X_REPL));
+                    int gold = onServer(mc, p -> xCount(p, Items.GOLD_INGOT));
+                    String near = onServer(mc, p -> xItemsNear(p, X_REPL));
+                    check("x replaced: after leaving, none of the 16 gold is lost (server: depot " + on + ", player " + gold + ", items near "
+                            + near + ")", on.getCount() + gold == 16 || near.contains("gold"));
+                    return true;
+                }),
+
+                // ---- G: a bottle taken off the depot while the spout pours ----
+                new Step("x spout: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.SPOUTING, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        xClear(level, X_SPOUT_DEPOT.getX() - 2, -60, XZ - 3, X_SPOUT_DEPOT.getX() + 2, -56, XZ + 2);
+                        level.setBlockAndUpdate(X_SPOUT_DEPOT, AllBlocks.DEPOT.getDefaultState());
+                        level.setBlockAndUpdate(X_SPOUT_DEPOT.above(2), AllBlocks.SPOUT.getDefaultState());
+                        IFluidHandler tank = level.getCapability(Capabilities.FluidHandler.BLOCK, X_SPOUT_DEPOT.above(2), null);
+                        if (tank != null) {
+                            tank.fill(new FluidStack(Fluids.WATER, 1000), IFluidHandler.FluidAction.EXECUTE);
+                        }
+                        return xKit(p, new ItemStack(Items.GLASS_BOTTLE)) && standBefore(p, X_SPOUT_DEPOT, 1.6);
+                    });
+                }),
+                new Step("x spout: right-click", 6, mc -> use(mc, 8, X_SPOUT_DEPOT, Direction.UP, xTop(X_SPOUT_DEPOT))),
+                new Step("x spout: scene", 0, mc -> {
+                    if (!xActive(SpoutScene.class)) {
+                        return false;
+                    }
+                    DepotScene.smokePin = true;
+                    pickUp(mc, 0);
+                    return true;
+                }),
+                new Step("x spout: bottle down", 8, mc -> {
+                    scene().hover();
+                    scene().click(0, false);
+                    return true;
+                }),
+                new Step("x spout: take it mid-pour", 0, mc -> {
+                    if (moving() || !(mc.level.getBlockEntity(X_SPOUT_DEPOT.above(2)) instanceof SpoutBlockEntity spout) || spout.processingTicks < 14) {
+                        return false;
+                    }
+                    SmokeTest.xBefore = ((SpoutScene) Scene.station).fills;
+                    CineCreate.LOGGER.info("[explore] spout countdown {} (client) when the hand takes the bottle", spout.processingTicks);
+                    scene().hover();
+                    scene().click(0, false);
+                    return true;
+                }),
+                new Step("x spout: flare?", 12, mc -> {
+                    shot(mc, "x07_spout_flare_after_take");
+                    return true;
+                }),
+                new Step("x spout: taken mid-pour", 30, mc -> {
+                    if (moving()) {
+                        return false;
+                    }
+                    int flares = Scene.station instanceof SpoutScene spout ? spout.fills - SmokeTest.xBefore : 0;
+                    // наполненная бутылка — в руке или ещё на депо (взять посреди налива могли и не дать)
+                    ItemStack lying = onServer(mc, p -> xDepotHeld(p, X_SPOUT_DEPOT));
+                    int filled = onServer(mc, p -> xCount(p, Items.POTION)) + (lying.is(Items.POTION) ? lying.getCount() : 0);
+                    int empty = onServer(mc, p -> xCount(p, Items.GLASS_BOTTLE)) + (lying.is(Items.GLASS_BOTTLE) ? lying.getCount() : 0);
+                    int fluid = onServer(mc, p -> xFluid(p, X_SPOUT_DEPOT.above(2)));
+                    check("x spout: a fill flare only for a bottle that is filled (flares " + flares + "; server: " + empty + " empty bottle(s), "
+                            + filled + " filled, on the depot " + lying + ", the spout holds " + fluid + " mB)", filled > 0 || flares == 0);
+                    DepotScene.smokePin = false;
+                    if (Scene.active()) {
+                        Scene.leave();
+                    }
+                    return true;
+                }),
+                new Step("x spout: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+
+                // ---- H: a deployer working the depot, its hand coming down over the plate the cursor rests on ----
+                new Step("x deployer: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.DEPLOYING, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        BlockPos deployer = X_DEP_DEPOT.above(2);
+                        xClear(level, X_DEP_DEPOT.getX() - 2, -60, XZ - 3, X_DEP_DEPOT.getX() + 2, -56, XZ + 2);
+                        level.setBlockAndUpdate(X_DEP_DEPOT, AllBlocks.DEPOT.getDefaultState());
+                        level.setBlockAndUpdate(deployer, AllBlocks.DEPLOYER.getDefaultState().setValue(BlockStateProperties.FACING, Direction.DOWN));
+                        motorAlong(level, deployer, 32);
+                        deployerHolds(p, deployer, AllItems.ANDESITE_ALLOY.asStack(64));
+                        xDepot(level, X_DEP_DEPOT, new ItemStack(Items.STRIPPED_OAK_LOG, 48));
+                        return xKit(p) && standBefore(p, X_DEP_DEPOT, 1.6);
+                    });
+                }),
+                new Step("x deployer: right-click", 6, mc -> use(mc, 8, X_DEP_DEPOT, Direction.UP, xTop(X_DEP_DEPOT))),
+                new Step("x deployer: scene", 0, mc -> {
+                    if (!xActive(DeployingScene.class)) {
+                        return false;
+                    }
+                    // the cursor engages only once the mouse has moved: move it away first
+                    xMouse(mc, mc.getWindow().getGuiScaledWidth() * 0.2, mc.getWindow().getGuiScaledHeight() * 0.8);
+                    SmokeTest.xWait = 0;
+                    SmokeTest.xNote = "";
+                    return true;
+                }),
+                new Step("x deployer: cursor on the plate", 4, mc -> {
+                    if (!xActive(DeployingScene.class)) {
+                        return true;
+                    }
+                    double[] gui = Picking.toGui(xTop(X_DEP_DEPOT).add(0, 0.02, 0));
+                    if (gui != null) {
+                        xMouse(mc, gui[0], gui[1]);
+                    }
+                    if (mc.level.getBlockEntity(X_DEP_DEPOT.above(2)) instanceof com.simibubi.create.content.kinetics.deployer.DeployerBlockEntity deployer) {
+                        float offset = deployer.getHandOffset(mc.getTimer().getGameTimeDeltaPartialTick(false));
+                        List<net.minecraft.network.chat.Component> tip = Scene.station.tooltip(ItemStack.EMPTY);
+                        boolean onHand = tip != null && !tip.isEmpty() && tip.get(0).getContents() instanceof TranslatableContents t
+                                && t.getKey().startsWith("cinecreate.deploying");
+                        if (offset < 0.3 && !SmokeTest.xNote.contains("up")) {
+                            SmokeTest.xNote += "hand up (" + String.format(Locale.ROOT, "%.2f", offset) + "): the cursor targets " + tip + "; ";
+                        }
+                        // рука активатора внизу, курсор всё там же, на работе: клик — о работе, не о руке
+                        if (offset > 0.6 && SmokeTest.xNote.contains("up") && !moving()) {
+                            SmokeTest.xNote += "hand down (" + String.format(Locale.ROOT, "%.2f", offset) + "): the same cursor targets " + tip
+                                    + " (on the deployer's hand: " + onHand + ")";
+                            SmokeTest.xValue = offset;
+                            shot(mc, "x08_deployer_hand_over_plate");
+                            Scene.station.click(0, false);
+                            SmokeTest.xFlag = ((DeployingScene) Scene.station).moving();
+                            return true;
+                        }
+                    }
+                    if (++SmokeTest.xWait > 300) {
+                        check("x deployer: the deployer's hand came down within 15 s (" + SmokeTest.xNote + ")", false);
+                        return true;
+                    }
+                    return false;
+                }),
+                new Step("x deployer: what the click did", 4, mc -> {
+                    if (moving()) {
+                        return false;
+                    }
+                    int alloy = onServer(mc, p -> xCount(p, AllItems.ANDESITE_ALLOY.get()));
+                    int logs = onServer(mc, p -> xCount(p, Items.STRIPPED_OAK_LOG));
+                    ItemStack held = deployerHeld(mc, X_DEP_DEPOT.above(2));
+                    CineCreate.LOGGER.info("[explore] deployer: {}", SmokeTest.xNote);
+                    check("x deployer: with the cursor resting on the plate, the deployer's hand coming down does not take over the click ("
+                            + SmokeTest.xNote + "; clicked: " + SmokeTest.xFlag + "; server: the player got " + alloy + " andesite alloy and "
+                            + logs + " logs, the deployer holds " + held + ")", alloy == 0);
+                    onServer(mc, p -> {
+                        motorSpeed(p.serverLevel(), xMotorOf(p.serverLevel(), X_DEP_DEPOT.above(2)), 0);
+                        return true;
+                    });
+                    xMouse(mc, mc.getWindow().getGuiScaledWidth() / 2.0, mc.getWindow().getGuiScaledHeight() / 2.0);
+                    if (Scene.active()) {
+                        Scene.leave();
+                    }
+                    return true;
+                }),
+                new Step("x deployer: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+
+                // ---- I: the plate under a press whose head is down on it ----
+                new Step("x press: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.PRESSING, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        BlockPos press = X_PRESS_DEPOT.above(2);
+                        xClear(level, X_PRESS_DEPOT.getX() - 2, -60, XZ - 3, X_PRESS_DEPOT.getX() + 2, -56, XZ + 2);
+                        level.setBlockAndUpdate(X_PRESS_DEPOT, AllBlocks.DEPOT.getDefaultState());
+                        level.setBlockAndUpdate(press, AllBlocks.MECHANICAL_PRESS.getDefaultState()
+                                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.EAST));
+                        level.setBlockAndUpdate(press.east(), AllBlocks.CREATIVE_MOTOR.getDefaultState()
+                                .setValue(BlockStateProperties.FACING, Direction.WEST));
+                        motorSpeed(level, press.east(), 24);
+                        xDepot(level, X_PRESS_DEPOT, new ItemStack(Items.IRON_INGOT, 16));
+                        return xKit(p) && standBefore(p, X_PRESS_DEPOT, 1.6);
+                    });
+                }),
+                new Step("x press: right-click", 6, mc -> use(mc, 8, X_PRESS_DEPOT, Direction.UP, xTop(X_PRESS_DEPOT))),
+                new Step("x press: scene", 0, mc -> {
+                    if (!xActive(PressScene.class)) {
+                        return false;
+                    }
+                    DepotScene.smokePin = true;
+                    scene().hover();
+                    return true;
+                }),
+                new Step("x press: head on the plate", 0, mc -> {
+                    if (moving() || !(mc.level.getBlockEntity(X_PRESS_DEPOT.above(2)) instanceof MechanicalPressBlockEntity press)) {
+                        return false;
+                    }
+                    PressingBehaviour pressing = press.getPressingBehaviour();
+                    float head = pressing.running ? pressing.getRenderedHeadOffset(mc.getTimer().getGameTimeDeltaPartialTick(false)) : 0;
+                    if (head < 0.8) {
+                        return false;
+                    }
+                    SmokeTest.xValue = head;
+                    shot(mc, "x09_press_head_down_hover");
+                    scene().hover();
+                    scene().click(0, false);
+                    SmokeTest.xFlag = moving();
+                    return true;
+                }),
+                new Step("x press: reaching under the head", 3, mc -> {
+                    float head = mc.level.getBlockEntity(X_PRESS_DEPOT.above(2)) instanceof MechanicalPressBlockEntity press
+                            && press.getPressingBehaviour().running
+                            ? press.getPressingBehaviour().getRenderedHeadOffset(mc.getTimer().getGameTimeDeltaPartialTick(false)) : 0;
+                    SmokeTest.xNote = "head at the beat " + String.format(Locale.ROOT, "%.2f", head) + ", hands " + xFmt(xHand(true)) + " / "
+                            + xFmt(xHand(false)) + ", plate " + xFmt(xTop(X_PRESS_DEPOT));
+                    shot(mc, "x09_press_take_under_head");
+                    return true;
+                }),
+                new Step("x press: taken", 0, mc -> {
+                    if (moving()) {
+                        return false;
+                    }
+                    int iron = onServer(mc, p -> xCount(p, Items.IRON_INGOT));
+                    int sheets = onServer(mc, p -> xCount(p, AllItems.IRON_SHEET.get()));
+                    check("x press: the plate is not worked while the press head is down on it (a take started at head offset "
+                            + String.format(Locale.ROOT, "%.2f", SmokeTest.xValue) + ": " + SmokeTest.xFlag + "; " + SmokeTest.xNote
+                            + "; server: the hand got " + iron + " iron, " + sheets + " sheets)", !SmokeTest.xFlag && iron + sheets == 0);
+                    DepotScene.smokePin = false;
+                    if (Scene.active()) {
+                        Scene.leave();
+                    }
+                    onServer(mc, p -> {
+                        motorSpeed(p.serverLevel(), X_PRESS_DEPOT.above(2).east(), 0);
+                        return true;
+                    });
+                    return true;
+                }),
+                new Step("x press: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+
+                // ---- K: the hand-off when neither the hand nor the deployer holds anything ----
+                new Step("x handoff: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.DEPLOYER, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        BlockPos at = new BlockPos(50, -59, XZ);
+                        xClear(level, at.getX() - 2, -60, XZ - 3, at.getX() + 2, -57, XZ + 2);
+                        level.setBlockAndUpdate(at, AllBlocks.DEPLOYER.getDefaultState().setValue(BlockStateProperties.FACING, Direction.NORTH));
+                        return xKit(p) && standBefore(p, at, 1.6);
+                    });
+                }),
+                new Step("x handoff: right-click", 6, mc -> use(mc, 8, new BlockPos(50, -59, XZ), Direction.NORTH)),
+                new Step("x handoff: scene", 0, mc -> {
+                    if (!xActive(DeployerScene.class)) {
+                        return false;
+                    }
+                    DeployerScene.smokePin = true;
+                    return true;
+                }),
+                new Step("x handoff: reach out empty", 8, mc -> {
+                    SmokeTest.xBefore = ((DeployerScene) Scene.station).swaps;
+                    ((DeployerScene) Scene.station).hover();
+                    ((DeployerScene) Scene.station).click(0, false);
+                    SmokeTest.xFlag = ((DeployerScene) Scene.station).moving();
+                    return true;
+                }),
+                new Step("x handoff: reached", 6, mc -> {
+                    shot(mc, "x11_handoff_nothing");
+                    return true;
+                }),
+                new Step("x handoff: done", 0, mc -> {
+                    if (moving()) {
+                        return false;
+                    }
+                    int swaps = ((DeployerScene) Scene.station).swaps - SmokeTest.xBefore;
+                    check("x handoff: with nothing in the hand and nothing in the deployer's, the hand-off is refused, not played (a move played: "
+                            + SmokeTest.xFlag + ", swaps counted " + swaps + ")", !SmokeTest.xFlag);
+                    DeployerScene.smokePin = false;
+                    Scene.leave();
+                    return true;
+                }),
+                new Step("x handoff: left", 0, mc -> Scene.phase == Scene.Phase.NONE),
+
+                // ---- J: an empty hand at a millstone with nothing ground: Create gives back the mouth's input ----
+                new Step("x millstone: build", 2, mc -> {
+                    ClientConfig.set(SceneKinds.MILLSTONE, Trigger.USE);
+                    return onServer(mc, p -> {
+                        ServerLevel level = p.serverLevel();
+                        xClear(level, X_MILL.getX() - 2, -60, XZ - 3, X_MILL.getX() + 2, -57, XZ + 2);
+                        level.setBlockAndUpdate(X_MILL, AllBlocks.MILLSTONE.getDefaultState());
+                        if (level.getBlockEntity(X_MILL) instanceof MillstoneBlockEntity millstone) {
+                            millstone.inputInv.setStackInSlot(0, new ItemStack(Items.WHEAT, 8));
+                            millstone.sendData();
+                        }
+                        return xKit(p) && standBefore(p, X_MILL, 1.6);
+                    });
+                }),
+                new Step("x millstone: right-click", 6, mc -> use(mc, 8, X_MILL, Direction.UP)),
+                new Step("x millstone: scene", 0, mc -> {
+                    if (!xActive(MillstoneScene.class)) {
+                        return false;
+                    }
+                    MillstoneScene.smokePin = true;
+                    return true;
+                }),
+                new Step("x millstone: gather", 8, mc -> {
+                    millstoneScene().hover();
+                    millstoneScene().click(0, false);
+                    return true;
+                }),
+                new Step("x millstone: gathering", 5, mc -> {
+                    Vec3 mouth = Vec3.atBottomCenterOf(X_MILL).add(0, 1, 0);
+                    // зазор сбоку, куда раньше тянулась рука за смолотым
+                    Vec3 gap = mouth.add(Scene.station.right().scale(0.5)).add(Scene.station.side().scale(0.12)).add(0, -0.3, 0);
+                    Vec3 right = xHand(true), left = xHand(false);
+                    double toMouth = Math.min(right == null ? 9 : right.distanceTo(mouth), left == null ? 9 : left.distanceTo(mouth));
+                    double toGap = Math.min(right == null ? 9 : right.distanceTo(gap), left == null ? 9 : left.distanceTo(gap));
+                    SmokeTest.xNote = "hands " + xFmt(right == null ? null : right.subtract(mouth)) + " / " + xFmt(left == null ? null : left.subtract(mouth))
+                            + " from the mouth (nearest " + String.format(Locale.ROOT, "%.2f", toMouth) + ", to the side gap "
+                            + String.format(Locale.ROOT, "%.2f", toGap) + ")";
+                    SmokeTest.xValue = toMouth - toGap;
+                    shot(mc, "x10_millstone_gather_from_mouth");
+                    return true;
+                }),
+                new Step("x millstone: gathered", 0, mc -> {
+                    if (moving()) {
+                        return false;
+                    }
+                    int wheat = onServer(mc, p -> xCount(p, Items.WHEAT));
+                    check("x millstone: the hand reaches where what it takes lies, the mouth (Create gave back " + wheat + " unground wheat; "
+                            + SmokeTest.xNote + ")", wheat == 8 && SmokeTest.xValue < 0);
+                    MillstoneScene.smokePin = false;
+                    if (Scene.active()) {
+                        Scene.leave();
+                    }
+                    return true;
+                }),
+                new Step("x millstone: left", 0, mc -> Scene.phase == Scene.Phase.NONE));
     }
 }

@@ -184,7 +184,7 @@ public class CrankScene extends CineStation<CrankMenu> {
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         HandCrankBlockEntity crank = crank();
         if (crank != null && crank.isOverStressed()) {
             return Component.translatable("cinecreate.hint.hand_crank.overstressed");
@@ -278,7 +278,7 @@ public class CrankScene extends CineStation<CrankMenu> {
     }
 
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
     }
 
     @Nullable

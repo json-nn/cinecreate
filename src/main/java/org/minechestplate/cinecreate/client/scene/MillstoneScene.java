@@ -21,6 +21,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.MillstoneMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
@@ -102,7 +103,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
 
     /** Where the hand pours (the layout's mouth spot). */
     private Vec3 mouth() {
-        return spot(0);
+        return spotBase(0);
     }
 
     @Override
@@ -164,9 +165,8 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
             return;
         }
         Vec3 mouth = mouth();
-        double half = MOUTH * spotArea(0);
         Vec3 hit = Picking.cursorOnPlane(mouth.y);
-        if (hit != null && Math.abs(hit.x - mouth.x) <= half && Math.abs(hit.z - mouth.z) <= half) {
+        if (hit != null && inSpot(0, hit, mouth, MOUTH)) {
             hover();
         }
     }
@@ -174,7 +174,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
     /** Development (SmokeTest): points at the mouth as the cursor would. */
     public void hover() {
         hovered = true;
-        aim = mouth();
+        aim = spot(0);
     }
 
     @Override
@@ -185,8 +185,14 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         }
     }
 
+    /** Where an empty hand gathers: by the gap where the ground output comes out, or the mouth when nothing is ground yet. */
     private Vec3 gatherPoint() {
-        return top.add(right().scale(0.5)).add(side().scale(0.12)).add(0, -0.3, 0);
+        MillstoneBlockEntity millstone = millstone();
+        boolean ground = false;
+        for (int i = 0; millstone != null && i < millstone.outputInv.getSlots(); i++) {
+            ground |= !millstone.outputInv.getStackInSlot(i).isEmpty();
+        }
+        return ground || millstone == null ? top.add(right().scale(0.5)).add(side().scale(0.12)).add(0, -0.3, 0) : spot(0).add(0, BARE, 0);
     }
 
     @Override
@@ -197,10 +203,10 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         }
         if (pouring) {
             double away = Anim.outCubic(Anim.window(t, PIECES_TO, POUR));
-            return mouth().add(side().scale(0.05)).add(0, CARRY - 0.04 * Anim.hump(Anim.window(t, 0, POUR_BEAT)) + 0.06 * away, 0);
+            return spot(0).add(side().scale(0.05)).add(0, CARRY - 0.04 * Anim.hump(Anim.window(t, 0, POUR_BEAT)) + 0.06 * away, 0);
         }
         double out = Anim.inOutCubic(Anim.window(t, 0, TAKE_BEAT)) - Anim.inOutCubic(Anim.window(t, TAKE_BEAT + 0.05, TAKE));
-        return Anim.lerp(mouth().add(0, BARE, 0), gatherPoint(), out);
+        return Anim.lerp(spot(0).add(0, BARE, 0), gatherPoint(), out);
     }
 
     @Override
@@ -216,7 +222,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
 
     /** Create's own input decides what the stones take (a left click pours the stack, a right click one). */
     @Override
-    protected void act(int button, boolean shift) {
+    protected void sceneAct(int button, boolean shift) {
         MillstoneMenu menu = menu();
         if (!hovered || menu == null) {
             return;
@@ -283,7 +289,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
     }
 
     @Override
-    public Component hint() {
+    protected Component sceneHint() {
         return Component.translatable(turning() ? "cinecreate.hint.millstone" : "cinecreate.hint.millstone.stopped");
     }
 
@@ -333,7 +339,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
             }
             double fall = k * k;
             Vec3 at = Anim.lerp(from, to, fall).add(right().scale(0.03 * Math.sin(i * 2.1)));
-            float size = (float) (PIECE_SIZE * (1 - 0.6 * fall)) * spotSize(0);
+            float size = (float) (PIECE_SIZE * (1 - 0.6 * fall));
             ItemPlacer.drawOriented(pose, buffers, camera.getPosition(), poured, at, Axis.YP.rotationDegrees((float) (i * 70 + k * 200)), size, light);
         }
     }
@@ -346,6 +352,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         }
         ItemStack carried = menu.getCarried();
         boolean ok = carried.isEmpty() ? holdsAnything() : accepts(MillstoneMenu.MOUTH, carried);
+        ok = ok && notReady() == null;
         float p = (float) (0.45 + 0.15 * Math.sin(Scene.clock() * 4));
         EnchantFx.disc(pose, buffers, camera, mouth().add(0, 0.004, 0), 0.14, 0, EnchantFx.GLOW,
                 p, ok ? p * 0.75f : p * 0.2f, ok ? p * 0.45f : p * 0.2f);

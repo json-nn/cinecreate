@@ -4,7 +4,7 @@ import java.util.List;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 
-/** A scene whose item spots can be moved in developer mode (DESIGN §8.7). Spots are read back through {@link Layouts}. */
+/** A scene whose hands' working spots can be moved in developer mode (DESIGN §8.7), read back through {@link Layouts#point}. */
 public interface LayoutScene {
     /** Profiles are kept per id, shared by every block of the scene. */
     String layoutId();
@@ -21,4 +21,9 @@ public interface LayoutScene {
 
     /** From the work towards the player (horizontal). */
     Vec3 layoutTowards();
+
+    /** On a face towards the player rather than on a top: offsets go up the face and out of it. */
+    default boolean spotOnFace(int spot) {
+        return false;
+    }
 }

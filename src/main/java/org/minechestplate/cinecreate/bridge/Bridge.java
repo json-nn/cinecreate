@@ -28,6 +28,9 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.Tags;
 import java.util.function.BooleanSupplier;
+import javax.annotation.Nullable;
+import net.neoforged.neoforge.common.CommonHooks;
+import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import org.minechestplate.cinecreate.registry.CineTags;
@@ -58,8 +61,28 @@ public final class Bridge {
      * Instead of {@code MenuActions.open}: the bridge menu, with the position (and any {@link BridgeMenu.ExtraData}) sent
      * along so client and server build the same slots.
      */
+    public static boolean open(ServerPlayer player, BlockPos pos, Direction side) {
+        opening = side;
+        try {
+            return open(player, pos);
+        } finally {
+            opening = null;
+        }
+    }
+
+    @Nullable
+    private static Direction opening;
+
+    /** Which way the player faces the block in the scene being opened (CI's session side; walked round, not where they clicked from). */
+    public static Direction facing(Player player) {
+        return opening != null ? opening.getOpposite() : player.getDirection();
+    }
+
     public static boolean open(ServerPlayer player, BlockPos pos) {
         Level level = player.level();
+        if (!allowed(player, pos, Direction.UP)) {
+            return false;
+        }
         SceneBlock scene = SceneBlocks.of(level.getBlockState(pos));
         MenuProvider provider = scene == null ? null : scene.menu().create(level, pos);
         if (provider == null) {
@@ -85,7 +108,7 @@ public final class Bridge {
         Level level = player.level();
         BlockState state = level.getBlockState(pos);
         SceneBlock scene = SceneBlocks.of(state);
-        if (scene == null || player.isSpectator() || player.distanceToSqr(Vec3.atCenterOf(pos)) > REACH_SQR) {
+        if (scene == null || player.isSpectator() || player.distanceToSqr(Vec3.atCenterOf(pos)) > REACH_SQR || !allowed(player, pos, Direction.UP)) {
             return;
         }
         scene.use().use(player, state, pos);
@@ -114,6 +137,9 @@ public final class Bridge {
     public static ItemInteractionResult useWithCarried(ServerPlayer player, AbstractContainerMenu menu, BlockPos pos, Direction face,
                                                        boolean intoHand) {
         Level level = player.level();
+        if (!allowed(player, pos, face)) {
+            return ItemInteractionResult.FAIL;
+        }
         BlockState state = level.getBlockState(pos);
         ItemStack own = player.getMainHandItem();
         ItemStack carried = menu.getCarried();
@@ -175,6 +201,9 @@ public final class Bridge {
     public static void onUse(PlayerInteractEvent.RightClickBlock event) {
         Level level = event.getLevel();
         Player player = event.getEntity();
+        if (automated(player) || probing) {
+            return;
+        }
         if (event.getHand() != InteractionHand.MAIN_HAND || event.getUseBlock() == TriState.FALSE
                 || player.isSecondaryUseActive() || player.isSpectator()) {
             return;
@@ -222,6 +251,44 @@ public final class Bridge {
         }
         boolean machine = !target.equals(clicked);
         return machine ? !(held.getItem() instanceof BlockItem) : scene.usedOn().test(level.getBlockState(target), hit.getDirection());
+    }
+
+    /** A deployer's (or another mod's) fake player: never a scene, and CI's handler must not see it (it reads the player's connection). */
+    public static boolean automated(Player player) {
+        return player instanceof FakePlayer || player instanceof ServerPlayer server && (server.connection == null || server.connection.getConnection().channel() == null);
+    }
+
+    private static boolean probing, probePassed;
+
+    /**
+     * Whether spawn protection and claim mods let the player use the block. Claims refuse a right-click, so one is posted
+     * and {@link #probe} stops it at HIGH priority, before Create or CI could act on it (claims at HIGHEST and HIGH decide).
+     */
+    public static boolean allowed(ServerPlayer player, BlockPos pos, Direction face) {
+        if (!player.serverLevel().mayInteract(player, pos)) {
+            return false;
+        }
+        BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos).add(Vec3.atLowerCornerOf(face.getNormal()).scale(0.5)), face, pos, false);
+        probing = true;
+        probePassed = false;
+        try {
+            CommonHooks.onRightClickBlock(player, InteractionHand.MAIN_HAND, pos, hit);
+            return probePassed;
+        } finally {
+            probing = false;
+        }
+    }
+
+    public static void probe(PlayerInteractEvent.RightClickBlock event) {
+        if (probing) {
+            probePassed = event.getUseBlock() != TriState.FALSE;
+            event.setCanceled(true);
+        }
+    }
+
+    /** True while {@link #allowed} asks: our handlers and CI's let it pass untouched. */
+    public static boolean probing() {
+        return probing;
     }
 
     public static boolean beyondScenes(Player player, BlockPos pos) {
