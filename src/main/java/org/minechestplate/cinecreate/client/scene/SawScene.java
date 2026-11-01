@@ -8,11 +8,11 @@ import com.simibubi.create.foundation.blockEntity.behaviour.filtering.FilteringB
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.CameraRig;
 import dev.dyslexic.cinematic.client.EnchantFx;
-import dev.dyslexic.cinematic.client.Fx;
 import dev.dyslexic.cinematic.client.ItemPlacer;
 import dev.dyslexic.cinematic.client.Picking;
 import dev.dyslexic.cinematic.client.Scene;
 import java.util.List;
+import java.util.Set;
 import javax.annotation.Nullable;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -34,7 +34,10 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.SawMenu;
 import org.minechestplate.cinecreate.client.CiNotice;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.client.layout.Layouts;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * A Mechanical Saw facing up (DESIGN §7.8), the stonecutter of Create: the shapes the stone on the table can be cut into
@@ -56,6 +59,10 @@ public class SawScene extends CineStation<SawMenu> {
     static final double DUST_PER_RPM = 5.5 / 256, DUST_MOST = 5.5;
     /** Half the table the cursor can touch. */
     static final double PLATE = 0.46;
+    /** How far the scene's frame turns about the table when it is worked from the saw's end (degrees). */
+    static final double TURN = 40;
+    /** How far from the table's middle the player stands: square to it, and on the turned frame's diagonal (clear of the block's corner). */
+    static final double STAND = 0.95, STAND_TURNED = 1.15;
 
     /** Development (SmokeTest): what hoverTable or hoverShape pointed at stays pointed at. */
     public static boolean smokePin;
@@ -79,6 +86,9 @@ public class SawScene extends CineStation<SawMenu> {
     private double shapesAt = -10;
     private boolean wasApplied;
     private double dust;
+    /** The scene's frame (out from the table, across it), once worked out. */
+    @Nullable
+    private Vec3[] frame;
 
     public SawScene(BlockPos pos, Direction side) {
         super(pos, side, SawMenu.class, 0);
@@ -159,7 +169,7 @@ public class SawScene extends CineStation<SawMenu> {
 
     /** The hand that pushes is the one on the side things come in from; the other waits where they go out. */
     private boolean rightPushes() {
-        return along().dot(right()) <= 0;
+        return along().dot(across()) <= 0;
     }
 
     // ---- staging -------------------------------------------------------------------------------------
@@ -177,12 +187,13 @@ public class SawScene extends CineStation<SawMenu> {
     /** The table where the stone is laid; the middle of the dial's arc. */
     @Override
     public Vec3 spotBase(int spot) {
-        return spot == 0 ? top : top.add(side().scale(-0.06)).add(0, 0.04, 0);
+        return spot == 0 ? top : top.add(out().scale(-0.06)).add(0, 0.04, 0);
     }
 
     @Override
     protected List<Vec3> stand(LocalPlayer player) {
-        Vec3 stand = new Vec3(top.x + side.getStepX() * 0.95, player.getY(), top.z + side.getStepZ() * 0.95);
+        double away = out().equals(side()) ? STAND : STAND_TURNED;
+        Vec3 stand = new Vec3(top.x + out().x * away, player.getY(), top.z + out().z * away);
         Views.noteStand(this, stand);
         boolean walk = Math.hypot(stand.x - player.getX(), stand.z - player.getZ()) > 0.06;
         return walk ? List.of(stand) : List.of();
@@ -193,11 +204,59 @@ public class SawScene extends CineStation<SawMenu> {
         return true;
     }
 
-    /** As CI's stonecutter. */
+    /**
+     * The scene's frame: out from the table and across it. From the saw's side it is the side's; from its end the blade
+     * (a flat texture) would be seen edge-on, invisible, so the whole frame (camera, dial, hands, where the player stands)
+     * turns {@link #TURN}° about the table, towards whichever side is clear.
+     */
+    private Vec3[] frame() {
+        if (frame != null) {
+            return frame;
+        }
+        Vec3[] plain = {side(), right()};
+        Minecraft mc = Minecraft.getInstance();
+        if (saw() == null || mc.player == null) {
+            return plain;
+        }
+        frame = plain;
+        if (Math.abs(along().dot(side())) > 0.7) {
+            Vec3 eye = top.add(side()).add(0, 0.95, 0);
+            for (int sign : new int[] {1, -1}) {
+                float turn = (float) Math.toRadians(sign * TURN);
+                Vec3 out = side().yRot(turn);
+                Vec3 feet = new Vec3(top.x + out.x * STAND_TURNED, mc.player.getY(), top.z + out.z * STAND_TURNED);
+                if (Views.blocking(eye, top.add(out).add(0, 0.95, 0), Set.of(pos)) == null && Views.taken(feet) == null) {
+                    frame = new Vec3[] {out, right().yRot(turn)};
+                    break;
+                }
+            }
+        }
+        return frame;
+    }
+
+    private Vec3 out() {
+        return frame()[0];
+    }
+
+    private Vec3 across() {
+        return frame()[1];
+    }
+
+    @Override
+    public Vec3 layoutAcross() {
+        return across();
+    }
+
+    @Override
+    public Vec3 layoutTowards() {
+        return out();
+    }
+
+    /** As CI's stonecutter, from the scene's frame. */
     @Override
     public CameraRig.Pose lean() {
-        Vec3 eye = top.add(side().scale(1.0)).add(0, 0.95, 0);
-        Vec3 look = top.add(side().scale(-0.05)).add(0, 0.25, 0).subtract(eye);
+        Vec3 eye = top.add(out()).add(0, 0.95, 0);
+        Vec3 look = top.add(out().scale(-0.05)).add(0, 0.25, 0).subtract(eye);
         float yaw = (float) Math.toDegrees(Math.atan2(-look.x, look.z));
         float pitch = (float) -Math.toDegrees(Math.atan2(look.y, Math.hypot(look.x, look.z)));
         return new CameraRig.Pose(eye, yaw, pitch, 1.5f);
@@ -208,6 +267,14 @@ public class SawScene extends CineStation<SawMenu> {
         return 64;
     }
 
+    /** Development (SmokeTest): how far the scene's view is off the blade's plane, in degrees (0: edge-on). */
+    public double bladeAngle() {
+        CameraRig.Pose lean = lean();
+        Vec3 look = Vec3.directionFromRotation(lean.pitch(), lean.yaw());
+        Vec3 normal = along().cross(new Vec3(0, 1, 0)).normalize();
+        return Math.toDegrees(Math.asin(Math.min(1, Math.abs(look.dot(normal)))));
+    }
+
     @Override
     public float bodyPitch() {
         return 50f;
@@ -216,7 +283,7 @@ public class SawScene extends CineStation<SawMenu> {
     /** While the saw cuts, one hand pushes just behind where Create draws the work; the other waits at the far edge. */
     @Override
     protected Vec3 restAt(boolean right) {
-        Vec3 rim = top.add(side().scale(0.36)).add(right().scale(right ? 0.28 : -0.3)).add(0, HAND_Y, 0);
+        Vec3 rim = top.add(out().scale(0.36)).add(across().scale(right ? 0.28 : -0.3)).add(0, HAND_Y, 0);
         SawBlockEntity saw = saw();
         if (saw == null || saw.inventory.isEmpty() || saw.getSpeed() == 0) {
             return rim;
@@ -225,7 +292,7 @@ public class SawScene extends CineStation<SawMenu> {
             return saw.inventory.appliedRecipe ? rim : piecePoint().subtract(along().scale(0.13)).add(0, 0.02, 0);
         }
         // у дальнего края, но на своей стороне: рука не тянется поперёк диска
-        Vec3 aside = Math.abs(along().dot(right())) > 0.5 ? side().scale(0.15) : right().scale(right ? 0.22 : -0.22);
+        Vec3 aside = Math.abs(along().dot(across())) > 0.5 ? out().scale(0.15) : across().scale(right ? 0.22 : -0.22);
         return top.add(along().scale(0.62)).add(aside).add(0, 0.05, 0);
     }
 
@@ -306,7 +373,7 @@ public class SawScene extends CineStation<SawMenu> {
     /** The arc's point at this angle, raised by lift. */
     private Vec3 onArc(double degrees, double lift) {
         double a = Math.toRadians(degrees);
-        return spotBase(1).add(right().scale(Math.cos(a) * DIAL_WIDE)).add(0, Math.sin(a) * DIAL_HIGH + lift, 0);
+        return spotBase(1).add(across().scale(Math.cos(a) * DIAL_WIDE)).add(0, Math.sin(a) * DIAL_HIGH + lift, 0);
     }
 
     /** The wheel turns the dial, a shape at a time, when there are more shapes than it holds (CI's). */
@@ -381,7 +448,7 @@ public class SawScene extends CineStation<SawMenu> {
         }
         onTable = false;
         hoverShape = k;
-        aim = k < n ? shapePoint(k).add(0, -0.1, 0).add(side().scale(0.12)).add(handShift(1)) : null;
+        aim = k < n ? shapePoint(k).add(0, -0.1, 0).add(out().scale(0.12)).add(handShift(1)) : null;
     }
 
     @Override
@@ -398,7 +465,7 @@ public class SawScene extends CineStation<SawMenu> {
         double t = moveTime();
         if (hoverShape >= 0 || t >= 0 && move == Move.CHOOSE) {
             double touch = t >= 0 && move == Move.CHOOSE ? Anim.hump(Anim.window(t, 0, CHOOSE)) : 0;
-            return target.add(side().scale(-0.06 * touch)).add(0, -0.01 * tap, 0);
+            return target.add(out().scale(-0.06 * touch)).add(0, -0.01 * tap, 0);
         }
         double lift;
         if (t < 0) {
@@ -472,7 +539,7 @@ public class SawScene extends CineStation<SawMenu> {
                 mc.gameMode.handleInventoryMouseClick(open.containerId, SawMenu.TABLE, button == 1 ? 1 : 0, ClickType.PICKUP, mc.player);
             }
             laid++;
-            Fx.motes(top.add(0, 0.03, 0), 0.08, 5, 0.62f, 0.6f, 0.56f, 0.05);
+            SceneFx.motes(top.add(0, 0.03, 0), 0.08, 5, 0.62f, 0.6f, 0.56f, 0.05);
         });
     }
 
@@ -494,6 +561,11 @@ public class SawScene extends CineStation<SawMenu> {
         }
         ItemStack lying = slot(SawMenu.TABLE).isEmpty() ? piece() : slot(SawMenu.TABLE);
         return onTable && carried.isEmpty() && !lying.isEmpty() ? List.of(lying.getHoverName()) : null;
+    }
+
+    @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.SAW;
     }
 
     @Override
@@ -530,9 +602,18 @@ public class SawScene extends CineStation<SawMenu> {
         while (dust >= 1) {
             dust--;
             Vec3 spray = along().scale(0.6).add(Math.random() - 0.5, 1.2 + Math.random(), Math.random() - 0.5).normalize();
-            Fx.spark(top.add(0, 0.12, 0), spray.scale(0.9 + Math.random() * 0.8), 0.25 + Math.random() * 0.25,
+            SceneFx.spark(top.add(0, 0.12, 0), spray.scale(0.9 + Math.random() * 0.8), 0.25 + Math.random() * 0.25,
                     0.008f + (float) Math.random() * 0.006f, Colors.red(color), Colors.green(color), Colors.blue(color), 3.5, 0.03);
             sparks++;
+        }
+        // щепки летят от игрока, вдоль диска: к нему они попали бы в глаза
+        Vec3 away = along().dot(out()) > 0 ? along().scale(-1) : along();
+        Vec3 blade = top.add(0, 0.1, 0);
+        if (Math.random() < 0.5) {
+            SceneFx.chips(blade, saw.inventory.getStackInSlot(0), 1, away.scale(0.6).add(0, 1, 0), 1.6, top.y);
+        }
+        if (Math.random() < 0.15) {
+            SceneFx.dust(blade.add(away.scale(0.15)), color, 1, 0.07, 0.2);
         }
     }
 

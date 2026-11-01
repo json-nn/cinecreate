@@ -20,6 +20,9 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 import org.minechestplate.cinecreate.bridge.CrankMenu;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * The Hand Crank (DESIGN §7.5). Holding the left button cranks, the right one cranks back: both hands ride the handle
@@ -42,6 +45,8 @@ public class CrankScene extends CineStation<CrankMenu> {
     static final int TIRED_FOOD = 6;
     /** Create's crank at full speed, in degrees per tick. */
     static final double FULL_SPEED = CrankMenu.RPM * 360 / 60.0 / 20.0;
+    /** The air the handle drags round: its share of the swirl's streaks, and of the handle's speed. */
+    static final double SWIRL_AMOUNT = 0.4, SWIRL_SPEED = 0.7;
 
     /** Development (SmokeTest): turns sent. */
     public int turns;
@@ -184,6 +189,11 @@ public class CrankScene extends CineStation<CrankMenu> {
     }
 
     @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.CRANK;
+    }
+
+    @Override
     protected Component sceneHint() {
         HandCrankBlockEntity crank = crank();
         if (crank != null && crank.isOverStressed()) {
@@ -275,6 +285,11 @@ public class CrankScene extends CineStation<CrankMenu> {
         }
         angle = crank.getIndependentAngle(Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false));
         speed = crank.chasingAngularVelocity / FULL_SPEED;
+        Vec3 k = new Vec3(axis.x(), axis.y(), axis.z());
+        Vec3 handle = grip(6.5f / 16);
+        Vec3 center = hub.add(k.scale(handle.subtract(hub).dot(k)));
+        SceneFx.swirl(center, k, handle.distanceTo(center), Math.toRadians(crank.chasingAngularVelocity * 20) * SWIRL_SPEED, SceneFx.WIND,
+                SWIRL_AMOUNT);
     }
 
     @Override

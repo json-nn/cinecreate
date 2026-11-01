@@ -25,6 +25,9 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.ValveMenu;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * The Valve Handle (DESIGN §7.4): both hands on the wheel at ten and two; a click turns it by its set angle (the right
@@ -238,6 +241,11 @@ public class ValveScene extends CineStation<ValveMenu> {
     }
 
     @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.VALVE;
+    }
+
+    @Override
     protected Component sceneHint() {
         ValveHandleBlockEntity valve = valve();
         if (valve != null && valve.isOverStressed()) {
@@ -370,6 +378,7 @@ public class ValveScene extends CineStation<ValveMenu> {
             return;
         }
         wheelAngle = valve.getIndependentAngle(Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false));
+        SceneFx.swirl(hub, axis, GRIP_RADIUS, Math.toRadians(valve.chasingAngularVelocity * 20), SceneFx.WIND, 1);
         if (!primed) {
             // руки берутся за колесо там, где оно стоит сейчас
             primed = true;
@@ -383,6 +392,8 @@ public class ValveScene extends CineStation<ValveMenu> {
                 clunks++;
                 clunkAt = Scene.clock();
                 play();
+                SceneFx.shock(hub.add(front().scale(0.06)), front(), 0.3, SceneFx.STEEL, 0.5);
+                SceneFx.brassSparks(hub.add(front().scale(0.08)), front().add(0, 0.5, 0), 6, 1.2);
             } else if (Scene.clock() - clickedAt > BRACE_TIME + ANSWER_WAIT) {
                 // сервер не повернул (колесо ещё остывало, или сеть уже крутит что-то другое)
                 turning = false;

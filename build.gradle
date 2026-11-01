@@ -17,9 +17,19 @@ tasks.named('wrapper', Wrapper).configure {
 version = mod_version
 group = mod_group_id
 
-// The smoke harness runs only in development (-Dcinecreate.smoke=true); the release jar leaves it out.
+// Two jars. The public one (what players install) leaves the development harness out (client/dev: the smoke test,
+// kept locally and out of git); the dev one, "-dev", has everything that was compiled.
 tasks.named('jar', Jar).configure {
     exclude('org/minechestplate/cinecreate/client/dev/**')
+}
+def devJar = tasks.register('devJar', Jar) {
+    group = 'build'
+    description = 'The mod with its development harness, for testing.'
+    archiveClassifier = 'dev'
+    from sourceSets.main.output
+}
+tasks.named('assemble') {
+    dependsOn devJar
 }
 
 sourceSets.main.resources {

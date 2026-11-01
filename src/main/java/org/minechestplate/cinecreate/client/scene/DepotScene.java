@@ -6,7 +6,6 @@ import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.CameraRig;
 import dev.dyslexic.cinematic.client.EnchantFx;
-import dev.dyslexic.cinematic.client.Fx;
 import dev.dyslexic.cinematic.client.ItemPlacer;
 import dev.dyslexic.cinematic.client.Picking;
 import dev.dyslexic.cinematic.client.Scene;
@@ -25,7 +24,10 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.DepotMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.SceneBlocks;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * The depot (DESIGN §7.1): lay the held stack on the plate or take what lies there, through {@link DepotMenu}, so what
@@ -234,7 +236,7 @@ public class DepotScene extends CineStation<DepotMenu> {
             click(DepotMenu.MAIN, button, ClickType.PICKUP);
             ghost = slot(DepotMenu.MAIN).copy();
             ghostAt = Scene.clock();
-            Fx.motes(plate().add(0, 0.02, 0), 0.08, 6, 0.62f, 0.6f, 0.56f, 0.05);
+            SceneFx.motes(plate().add(0, 0.02, 0), 0.08, 6, 0.62f, 0.6f, 0.56f, 0.05);
         });
     }
 
@@ -282,6 +284,11 @@ public class DepotScene extends CineStation<DepotMenu> {
     public List<Component> tooltip(ItemStack carried) {
         ItemStack lying = slot(DepotMenu.MAIN);
         return hovered && carried.isEmpty() && !lying.isEmpty() && notReady() == null ? List.of(lying.getHoverName()) : null;
+    }
+
+    @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.DEPOT;
     }
 
     @Override

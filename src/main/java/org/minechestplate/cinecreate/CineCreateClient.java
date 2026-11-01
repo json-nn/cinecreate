@@ -53,7 +53,6 @@ import org.minechestplate.cinecreate.client.scene.PressScene;
 import org.minechestplate.cinecreate.client.scene.SawScene;
 import org.minechestplate.cinecreate.client.scene.SpoutScene;
 import org.minechestplate.cinecreate.client.scene.ValveScene;
-import org.minechestplate.cinecreate.client.dev.SmokeTest;
 import org.minechestplate.cinecreate.registry.CineMenus;
 import org.minechestplate.cinecreate.station.SceneKind;
 import org.minechestplate.cinecreate.station.SceneKinds;
@@ -78,9 +77,14 @@ public class CineCreateClient {
         modEventBus.addListener(this::registerLayers);
         modEventBus.addListener(ClientConfig::onReload);
         ClientEvents.register(NeoForge.EVENT_BUS);
-        // не SmokeTest.ENABLED: в выпускном jar класса нет (build.gradle), а чтение его поля загрузило бы класс
+        // по имени: тестового класса нет ни в публичном jar, ни в исходниках в git (только у разработчика)
         if (Boolean.getBoolean("cinecreate.smoke")) {
-            SmokeTest.register(NeoForge.EVENT_BUS);
+            try {
+                Class.forName("org.minechestplate.cinecreate.client.dev.SmokeTest").getMethod("register", IEventBus.class)
+                        .invoke(null, NeoForge.EVENT_BUS);
+            } catch (ReflectiveOperationException e) {
+                CineCreate.LOGGER.error("[cinecreate] the smoke test was asked for, but this build has none", e);
+            }
         }
     }
 

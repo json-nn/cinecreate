@@ -6,7 +6,6 @@ import com.simibubi.create.content.fluids.transfer.GenericItemEmptying;
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.CameraRig;
 import dev.dyslexic.cinematic.client.EnchantFx;
-import dev.dyslexic.cinematic.client.Fx;
 import dev.dyslexic.cinematic.client.Picking;
 import dev.dyslexic.cinematic.client.Scene;
 import java.util.List;
@@ -24,6 +23,9 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
 import org.minechestplate.cinecreate.bridge.DrainMenu;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * The Item Drain (DESIGN §7.13). A filled container is laid on the far side of the grate; Create rolls it to the middle,
@@ -53,6 +55,7 @@ public class DrainScene extends CineStation<DrainMenu> {
     private Move move = Move.LAY;
     private ItemStack lastLying = ItemStack.EMPTY;
     private boolean draining;
+    private int drainColor = 0xFFFFFF;
     private double caughtAt = -10;
     /** When the hand last took from the grate: Create's sync of that comes later, and is not a catch. */
     private double tookAt = -10;
@@ -210,7 +213,7 @@ public class DrainScene extends CineStation<DrainMenu> {
         move(Move.LAY, () -> {
             click(ClickType.PICKUP);
             laid++;
-            Fx.motes(layAt().add(0, 0.02, 0), 0.08, 5, 0.62f, 0.6f, 0.56f, 0.05);
+            SceneFx.motes(layAt().add(0, 0.02, 0), 0.08, 5, 0.62f, 0.6f, 0.56f, 0.05);
         });
     }
 
@@ -233,6 +236,11 @@ public class DrainScene extends CineStation<DrainMenu> {
     }
 
     @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.DRAIN;
+    }
+
+    @Override
     protected Component sceneHint() {
         return Component.translatable("cinecreate.hint.item_drain");
     }
@@ -252,11 +260,15 @@ public class DrainScene extends CineStation<DrainMenu> {
         if (full) {
             FluidStack fluid = GenericItemEmptying.emptyItem(mc.level, now, true).getFirst();
             int color = Colors.of(fluid);
+            if (!draining) {
+                SceneFx.splash(top, 0.35, color, 0.5);
+            }
+            drainColor = color;
             double turn = Scene.clock() * 9;
             for (int i = 0; i < 2; i++) {
                 double a = turn + i * Math.PI;
                 Vec3 at = top.add(Math.cos(a) * 0.12, 0.05, Math.sin(a) * 0.12);
-                Fx.spark(at, new Vec3(-Math.sin(a) * 0.4, -0.5, Math.cos(a) * 0.4), 0.3, 0.012f,
+                SceneFx.spark(at, new Vec3(-Math.sin(a) * 0.4, -0.5, Math.cos(a) * 0.4), 0.3, 0.012f,
                         Colors.red(color), Colors.green(color), Colors.blue(color), 0.5, 0.03);
             }
         }
@@ -266,7 +278,7 @@ public class DrainScene extends CineStation<DrainMenu> {
         if (!lastLying.isEmpty() && now.isEmpty() && moveTime() < 0 && Scene.clock() - tookAt > TOOK_SYNC) {
             caught++;
             caughtAt = Scene.clock();
-            Fx.motes(top.add(side().scale(0.45)), 0.08, 6, 0.85f, 0.85f, 0.85f, 0.08);
+            SceneFx.motes(top.add(side().scale(0.45)), 0.08, 6, 0.85f, 0.85f, 0.85f, 0.08);
         }
         draining = full;
         lastLying = now.copy();
@@ -278,6 +290,9 @@ public class DrainScene extends CineStation<DrainMenu> {
 
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
+        if (draining) {
+            SceneFx.drain(top, 0.3, drainColor);
+        }
         DrainMenu menu = menu();
         if (!hovered || moving() || menu == null) {
             return;

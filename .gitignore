@@ -48,3 +48,6 @@ tools/avatar/out/
 tools/avatar/__pycache__/
 /docs/
 /tools/
+
+### Development harness: the smoke test stays local, and out of the public jar
+src/main/java/org/minechestplate/cinecreate/client/dev/SmokeTest.java

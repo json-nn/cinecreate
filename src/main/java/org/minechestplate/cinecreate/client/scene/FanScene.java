@@ -1,19 +1,25 @@
 package org.minechestplate.cinecreate.client.scene;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.simibubi.create.api.registry.CreateBuiltInRegistries;
+import com.simibubi.create.content.kinetics.fan.AirCurrent;
+import com.simibubi.create.content.kinetics.fan.EncasedFanBlockEntity;
 import com.simibubi.create.content.kinetics.fan.processing.FanProcessingType;
-import dev.dyslexic.cinematic.client.Fx;
 import dev.dyslexic.cinematic.client.Scene;
 import java.util.Locale;
 import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.Composites;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * Bulk processing: the depot in an Encased Fan's stream (DESIGN §7.11). The wind trembles the camera, the item is
@@ -103,10 +109,10 @@ public class FanScene extends DepotScene {
             Vec3 at = plate().add(0, 0.1, 0);
             float r = Colors.red(kind.color), g = Colors.green(kind.color), b = Colors.blue(kind.color);
             switch (kind) {
-                case SPLASHING -> Fx.motes(at, 0.15, 2, r, g, b, 0.25);
-                case SMOKING -> Fx.steam(at, 0.12, 1);
-                case BLASTING -> Fx.hotSparks(at, new Vec3(0, 1, 0), 0.6, 2, 0.8);
-                case HAUNTING -> Fx.motes(at, 0.15, 2, r, g, b, 0.2);
+                case SPLASHING -> SceneFx.motes(at, 0.15, 2, r, g, b, 0.25);
+                case SMOKING -> SceneFx.steam(at, 0.12, 1);
+                case BLASTING -> SceneFx.hotSparks(at, new Vec3(0, 1, 0), 0.6, 2, 0.8);
+                case HAUNTING -> SceneFx.motes(at, 0.15, 2, r, g, b, 0.2);
             }
         }
         if (kind != null && !lastLying.isEmpty() && !now.isEmpty() && !ItemStack.isSameItem(lastLying, now)) {
@@ -114,6 +120,23 @@ public class FanScene extends DepotScene {
             flashAt = Scene.clock();
         }
         lastLying = now.copy();
+    }
+
+    /** The stream's air streaming across the plate, the way Create's current blows (towards a pulling fan). */
+    @Override
+    protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
+        super.drawWorld(pose, buffers, camera, light);
+        Minecraft mc = Minecraft.getInstance();
+        if (stream == null || mc.level == null || !(mc.level.getBlockEntity(stream.fan()) instanceof EncasedFanBlockEntity fan)) {
+            return;
+        }
+        AirCurrent current = fan.getAirCurrent();
+        if (current == null || current.direction == null) {
+            return;
+        }
+        Direction flow = current.pushing ? current.direction : current.direction.getOpposite();
+        SceneFx.breeze(top.add(0, 0.22, 0), Vec3.atLowerCornerOf(flow.getNormal()), 0.4, kind == null ? SceneFx.WIND : kind.color,
+                kind == null ? 0.45f : 0.55f);
     }
 
     @Override
@@ -124,6 +147,11 @@ public class FanScene extends DepotScene {
     @Override
     public int flashColor() {
         return kind == null ? 0xFFFFFF : kind.color;
+    }
+
+    @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.FAN;
     }
 
     @Override

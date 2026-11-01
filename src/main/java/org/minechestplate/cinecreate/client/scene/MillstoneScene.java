@@ -6,7 +6,6 @@ import com.simibubi.create.content.kinetics.millstone.MillstoneBlockEntity;
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.CameraRig;
 import dev.dyslexic.cinematic.client.EnchantFx;
-import dev.dyslexic.cinematic.client.Fx;
 import dev.dyslexic.cinematic.client.ItemPlacer;
 import dev.dyslexic.cinematic.client.Picking;
 import dev.dyslexic.cinematic.client.Scene;
@@ -25,6 +24,9 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.MillstoneMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * The Millstone (DESIGN §7.9): what is carried is poured into the mouth on top, flour dust puffs from the gap between
@@ -234,7 +236,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
                 startMove(TAKE, TAKE_BEAT, () -> {
                     buttonClick();
                     gathers++;
-                    Fx.motes(gatherPoint(), 0.06, 5, Colors.red(DUST), Colors.green(DUST), Colors.blue(DUST), 0.06);
+                    SceneFx.motes(gatherPoint(), 0.06, 5, Colors.red(DUST), Colors.green(DUST), Colors.blue(DUST), 0.06);
                 });
             }
             return;
@@ -248,6 +250,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
         startMove(POUR, POUR_BEAT, () -> {
             click(button);
             pours++;
+            SceneFx.dust(mouth(), SceneFx.FLOUR, 2, 0.06, 0.15);
         });
     }
 
@@ -289,6 +292,11 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
     }
 
     @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.MILLSTONE;
+    }
+
+    @Override
     protected Component sceneHint() {
         return Component.translatable(turning() ? "cinecreate.hint.millstone" : "cinecreate.hint.millstone.stopped");
     }
@@ -309,8 +317,15 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
             dust--;
             double a = Math.random() * Math.PI * 2;
             Vec3 at = top.add(Math.cos(a) * GAP_OUT, -GAP_DOWN + 0.02, Math.sin(a) * GAP_OUT);
-            Fx.motes(at, 0.02, 1, r, g, b, 0.04);
+            SceneFx.motes(at, 0.02, 1, r, g, b, 0.04);
             puffs++;
+            Vec3 out = new Vec3(Math.cos(a), -0.2, Math.sin(a));
+            if (Math.random() < 0.3) {
+                SceneFx.dust(at, SceneFx.FLOUR, 1, 0.06, 0.08);
+            }
+            if (Math.random() < 0.35) {
+                SceneFx.chips(at, millstone.inputInv.getStackInSlot(0), 1, out, 0.6, pos.getY());
+            }
         }
     }
 

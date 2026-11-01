@@ -46,7 +46,10 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import org.minechestplate.cinecreate.bridge.BasinMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
 import org.minechestplate.cinecreate.client.CiNotice;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.Composites;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * The Basin (DESIGN §7.6), the brewing stand of Create: items are dropped in over the rim, buckets and bottles pour or
@@ -84,6 +87,9 @@ public class BasinScene extends CineStation<BasinMenu> {
     private double streamSparks;
     /** Steam over a mixing basin: a puff every this many ticks. */
     static final int STEAM_EVERY = 3;
+    /** The mixer's head offset (Create's, down is 1 + 7/16) past which the whisk is in the basin; the inside's half-width. */
+    static final float STIRRING = 1.1f;
+    static final double INNER = 0.34;
 
     /** Development (SmokeTest): the basin counts as pointed at wherever the cursor is. */
     public static boolean smokePin;
@@ -527,6 +533,11 @@ public class BasinScene extends CineStation<BasinMenu> {
     }
 
     @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.BASIN;
+    }
+
+    @Override
     protected Component sceneHint() {
         if (mixing) {
             return Component.translatable("cinecreate.hint.basin.mixing");
@@ -602,16 +613,16 @@ public class BasinScene extends CineStation<BasinMenu> {
         mixing = mixer != null && mixer.running;
         if (mixing && ++steamTicks % STEAM_EVERY == 0) {
             Vec3 at = surface();
-            Fx.steam(at.add(0, 0.05, 0), 0.22, 1);
+            SceneFx.steam(at.add(0, 0.05, 0), 0.22, 1);
             int tint = basinTint();
-            Fx.motes(at, 0.22, 2, red(tint), green(tint), blue(tint), 0.06);
+            SceneFx.motes(at, 0.22, 2, red(tint), green(tint), blue(tint), 0.06);
         }
         int now = outputCount();
         if (lastOutputs >= 0 && now > lastOutputs) {
             outputs++;
             flashAt = Scene.clock();
             flashColor = fluidUnits() >= 1 ? basinTint() : WARM;
-            Fx.motes(surface(), 0.18, 12, 1f, 0.95f, 0.78f, 0.3);
+            SceneFx.motes(surface(), 0.18, 12, 1f, 0.95f, 0.78f, 0.3);
         }
         lastOutputs = now;
     }
@@ -626,9 +637,12 @@ public class BasinScene extends CineStation<BasinMenu> {
             Vec3 mouth = held.add(side().scale(-0.06));
             streamSparks += STREAM_RATE * Scene.frameDt;
             for (; streamSparks >= 1; streamSparks--) {
-                Fx.spark(mouth, new Vec3(0, -1.6, 0).add(landing().subtract(mouth).multiply(1, 0, 1)), 0.22, 0.016f,
+                SceneFx.spark(mouth, new Vec3(0, -1.6, 0).add(landing().subtract(mouth).multiply(1, 0, 1)), 0.22, 0.016f,
                         red(tint), green(tint), blue(tint), 3.0, 0.05);
             }
+            Vec3 liquid = liquidTop();
+            Vec3 lands = landing();
+            SceneFx.pour(mouth, new Vec3(lands.x, liquid == null ? pos.getY() + FLOOR : liquid.y, lands.z), tint, 0.6);
         }
         pressStroke();
         if (!falling.isEmpty() && !landed && Scene.clock() - fellAt >= FALL) {
@@ -660,7 +674,9 @@ public class BasinScene extends CineStation<BasinMenu> {
             if (fluidUnits() >= 1) {
                 splash(at, 10);
             } else {
-                Fx.motes(at, 0.25, 14, 0.62f, 0.6f, 0.56f, 0.12);
+                SceneFx.motes(at, 0.25, 14, 0.62f, 0.6f, 0.56f, 0.12);
+                SceneFx.shock(at, new Vec3(0, 1, 0), 0.3, SceneFx.DUST, 0.8);
+                SceneFx.chips(at, firstInput(), 6, new Vec3(0, 1, 0), 1.2, pos.getY() + FLOOR);
             }
         }
     }
@@ -670,12 +686,67 @@ public class BasinScene extends CineStation<BasinMenu> {
         if (mc.level == null) {
             return;
         }
-        if (fluidUnits() >= 1) {
+        Vec3 liquid = liquidTop();
+        if (liquid != null) {
             int tint = basinTint();
-            Fx.motes(at, 0.15, count, red(tint), green(tint), blue(tint), 0.18);
+            SceneFx.motes(at, 0.15, count, red(tint), green(tint), blue(tint), 0.18);
+            SceneFx.splash(new Vec3(at.x, liquid.y, at.z), INNER, tint, count / 8.0);
             mc.level.playLocalSound(at.x, at.y, at.z, SoundEvents.GENERIC_SPLASH, SoundSource.BLOCKS, 0.2f, 1.6f, false);
         } else {
             AllSoundEvents.DEPOT_PLOP.playAt(mc.level, at, 0.3f, 1f, false);
+        }
+    }
+
+    /** The liquid's surface as Create draws it (its level eased the same way), or null for none. */
+    @Nullable
+    private Vec3 liquidTop() {
+        float units = fluidUnits();
+        if (units < 1) {
+            return null;
+        }
+        float level = Mth.clamp(units / 2000, 0, 1);
+        level = 1 - (1 - level) * (1 - level);
+        return Vec3.atBottomCenterOf(pos).add(0, FLOOR + 12 / 16.0 * level, 0);
+    }
+
+    private ItemStack firstInput() {
+        BasinBlockEntity basin = basin();
+        for (int i = 0; basin != null && i < basin.getInputInventory().getSlots(); i++) {
+            if (!basin.getInputInventory().getStackInSlot(i).isEmpty()) {
+                return basin.getInputInventory().getStackInSlot(i);
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    /**
+     * Once a frame: with the whisk down in it the liquid churns round it (over a fire it boils), a dry mix tumbles; a
+     * heated liquid at rest simmers.
+     */
+    private void agitate() {
+        Vec3 liquid = liquidTop();
+        HeatLevel heat = heat();
+        boolean heated = heat.isAtLeast(HeatLevel.KINDLED);
+        MechanicalMixerBlockEntity mixer = mixer();
+        float pt = Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false);
+        if (mixing && mixer != null && mixer.getRenderedHeadOffset(pt) > STIRRING) {
+            double omega = Math.toRadians(mixer.getRenderedHeadRotationSpeed(pt) * 12);
+            if (liquid != null) {
+                SceneFx.churn(liquid, INNER, basinTint(), omega, heated);
+                return;
+            }
+            Vec3 floor = Vec3.atBottomCenterOf(pos).add(0, FLOOR, 0);
+            for (int n = SceneFx.rate(10); n > 0; n--) {
+                double a = Math.random() * Math.PI * 2, r = 0.08 + Math.random() * 0.18;
+                Vec3 arm = new Vec3(Math.cos(a), 0, Math.sin(a));
+                Vec3 tangent = new Vec3(0, 1, 0).cross(arm).scale(Math.signum(omega));
+                SceneFx.chips(floor.add(arm.scale(r)).add(0, 0.06, 0), firstInput(), 1, tangent.add(0, 0.8, 0), 1.0, floor.y);
+            }
+            if (SceneFx.rate(3) > 0) {
+                SceneFx.dust(floor.add(0, 0.1, 0), SceneFx.DUST, 1, 0.08, 0.15);
+            }
+        } else if (liquid != null && heated) {
+            SceneFx.simmer(liquid, INNER, basinTint(), heat == HeatLevel.SEETHING);
         }
     }
 
@@ -695,8 +766,9 @@ public class BasinScene extends CineStation<BasinMenu> {
         return WARM;
     }
 
+    /** The fluid's colour without its alpha: CI's flash adds its own, and an opaque one would fill the screen. */
     private static int tint(FluidStack fluid) {
-        return IClientFluidTypeExtensions.of(fluid.getFluid()).getTintColor(fluid);
+        return IClientFluidTypeExtensions.of(fluid.getFluid()).getTintColor(fluid) & 0xFFFFFF;
     }
 
     private static float red(int color) {
@@ -760,6 +832,7 @@ public class BasinScene extends CineStation<BasinMenu> {
 
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
+        agitate();
         HeatLevel heat = heat();
         double clock = Scene.clock();
         if (heat.isAtLeast(HeatLevel.FADING)) {

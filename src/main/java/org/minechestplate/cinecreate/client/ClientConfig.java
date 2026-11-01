@@ -3,7 +3,9 @@ package org.minechestplate.cinecreate.client;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.ParticleStatus;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.fml.event.config.ModConfigEvent;
@@ -26,6 +28,9 @@ public final class ClientConfig {
     private static final ModConfigSpec.BooleanValue INVITATION;
     private static final ModConfigSpec.BooleanValue FOLLOW_LAUNCHES;
     private static final ModConfigSpec.BooleanValue CLIENT_MODE;
+    private static final ModConfigSpec.BooleanValue PARTICLES, FOLLOW_GAME;
+    private static final ModConfigSpec.IntValue AMOUNT;
+    private static final Map<ResourceLocation, ModConfigSpec.BooleanValue> PARTICLES_PER_KIND;
 
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
@@ -51,8 +56,27 @@ public final class ClientConfig {
                         + " a server: a change applies from the next connection.")
                 .translation("cinecreate.configuration.clientMode")
                 .define("clientMode", false);
+        b.translation("cinecreate.configuration.particles").push("particles");
+        PARTICLES = b.comment("The scenes' particles (drops, rings, wind, dust, sparks): off turns them all off at once.")
+                .translation("cinecreate.configuration.particles.enabled")
+                .define("enabled", true);
+        AMOUNT = b.comment("How many of them start, in percent.")
+                .translation("cinecreate.configuration.particles.amount")
+                .defineInRange("amount", 100, 0, 100);
+        FOLLOW_GAME = b.comment("Follow the game's own Particles setting: Decreased about half, Minimal none.")
+                .translation("cinecreate.configuration.particles.followGame")
+                .define("followGame", true);
+        Map<ResourceLocation, ModConfigSpec.BooleanValue> perKind = new LinkedHashMap<>();
+        b.translation("cinecreate.configuration.particles.blocks").push("blocks");
+        for (SceneKind kind : SceneKinds.all()) {
+            perKind.put(kind.id(), b.comment("Particles in the " + kind.name() + " scene.")
+                    .translation("cinecreate.configuration.particles." + kind.name())
+                    .define(kind.name(), true));
+        }
+        b.pop(2);
         SPEC = b.build();
         TRIGGERS = Collections.unmodifiableMap(triggers);
+        PARTICLES_PER_KIND = Collections.unmodifiableMap(perKind);
     }
 
     public static Trigger trigger(SceneKind kind) {
@@ -73,6 +97,31 @@ public final class ClientConfig {
 
     public static boolean clientMode() {
         return SPEC.isLoaded() && CLIENT_MODE.get();
+    }
+
+    /**
+     * How much of a scene's particles start, 0..1: none with all particles or this block's off, else the amount, halved
+     * or none by the game's own setting when it is followed. A null kind: a scene of no block.
+     */
+    public static double particleShare(@Nullable SceneKind kind) {
+        if (SPEC.isLoaded()) {
+            ModConfigSpec.BooleanValue own = kind == null ? null : PARTICLES_PER_KIND.get(kind.id());
+            if (!PARTICLES.get() || own != null && !own.get()) {
+                return 0;
+            }
+        }
+        double share = SPEC.isLoaded() ? AMOUNT.get() / 100.0 : 1;
+        if (!SPEC.isLoaded() || FOLLOW_GAME.get()) {
+            ParticleStatus status = Minecraft.getInstance().options.particles().get();
+            share *= status == ParticleStatus.ALL ? 1 : status == ParticleStatus.DECREASED ? 0.5 : 0;
+        }
+        return share;
+    }
+
+    /** Development (SmokeTest): a block's particles on or off (null: all of them), as the config screen sets them. */
+    public static void setParticles(@Nullable SceneKind kind, boolean on) {
+        (kind == null ? PARTICLES : PARTICLES_PER_KIND.get(kind.id())).set(on);
+        SPEC.save();
     }
 
     /** Development (SmokeTest): changes a scene's trigger the way the config screen does (saved, then applied). */

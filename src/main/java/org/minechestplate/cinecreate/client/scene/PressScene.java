@@ -4,7 +4,6 @@ import com.simibubi.create.content.kinetics.press.MechanicalPressBlockEntity;
 import com.simibubi.create.content.kinetics.press.PressingBehaviour;
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.CameraRig;
-import dev.dyslexic.cinematic.client.Fx;
 import dev.dyslexic.cinematic.client.Scene;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +20,10 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.DepotMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.Composites;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * Pressing (DESIGN §7.2): under a Mechanical Press the depot is the anvil. Create drives the head and the scene only
@@ -123,6 +125,11 @@ public class PressScene extends DepotScene {
     }
 
     @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.PRESSING;
+    }
+
+    @Override
     protected Component sceneHint() {
         if (press() == null) {
             return super.sceneHint();
@@ -189,8 +196,10 @@ public class PressScene extends DepotScene {
         }
         resultBy = now + RESULT_WAIT;
         Vec3 at = top.add(0, 0.03, 0);
-        Fx.blowSparks(at, (int) Math.round(28 * strength), 2.2);
-        Fx.hotSparks(at, side().scale(-1).add(0, 0.7, 0), 0.5, (int) Math.round(10 * strength), 2.4);
+        SceneFx.blowSparks(at, (int) Math.round(28 * strength), 2.2);
+        SceneFx.hotSparks(at, side().scale(-1).add(0, 0.7, 0), 0.5, (int) Math.round(10 * strength), 2.4);
+        SceneFx.shock(top.add(0, 0.015, 0), new Vec3(0, 1, 0), 0.45, HOT_METAL, strength);
+        SceneFx.chips(top.add(0, 0.06, 0), slot(DepotMenu.MAIN), (int) Math.round(6 * strength), new Vec3(0, 1, 0), 1.4, top.y);
         // удар пресса играет сервер (звук Create); здесь — только тихий звон металла
         play(SoundEvents.ANVIL_PLACE, 0.2f * (float) strength, 1.7f);
     }
@@ -215,7 +224,7 @@ public class PressScene extends DepotScene {
         if (unshown > 0) {
             unshown--;
             results++;
-            Fx.motes(top.add(0, 0.05, 0), 0.1, 10, 1.0f, 0.75f, 0.4f, 0.2);
+            SceneFx.motes(top.add(0, 0.05, 0), 0.1, 10, 1.0f, 0.75f, 0.4f, 0.2);
             play(SoundEvents.AMETHYST_BLOCK_CHIME, 0.35f, 1.3f);
         } else if (Scene.clock() <= resultBy) {
             return;

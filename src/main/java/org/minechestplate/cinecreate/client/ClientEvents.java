@@ -10,6 +10,7 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import org.minechestplate.cinecreate.client.fx.Particles;
 import org.minechestplate.cinecreate.client.layout.LayoutPanel;
 import org.minechestplate.cinecreate.client.scene.DevView;
 import org.minechestplate.cinecreate.station.SceneBlocks;
@@ -30,6 +31,7 @@ public final class ClientEvents {
         bus.addListener(LayoutPanel::onRelease);
         bus.addListener(LayoutPanel::onScroll);
         bus.addListener(LayoutPanel::onRender);
+        Particles.register(bus);
         bus.addListener(ClientPlayerNetworkEvent.LoggingIn.class, event -> {
             ClientMode.onLogin();
             ClientConfig.sendToServer();

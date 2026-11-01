@@ -6,7 +6,6 @@ import com.simibubi.create.content.fluids.spout.SpoutBlockEntity;
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.CameraRig;
 import dev.dyslexic.cinematic.client.EnchantFx;
-import dev.dyslexic.cinematic.client.Fx;
 import dev.dyslexic.cinematic.client.Scene;
 import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
@@ -18,7 +17,10 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.Composites;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * Spouting: a Spout over the depot (DESIGN §7.13). While Create pours, droplets bead on the work in the liquid's colour;
@@ -84,12 +86,13 @@ public class SpoutScene extends DepotScene {
         // поток без предмета (его забрали): ни искр, ни вспышки — наполнять нечего
         boolean filling = !slot(DepotMenu.MAIN).isEmpty();
         if (ticks > 5 && filling) {
-            Fx.motes(plate().add(0, 0.12, 0), 0.07, 1, Colors.red(color), Colors.green(color), Colors.blue(color), 0.0);
+            SceneFx.motes(plate().add(0, 0.12, 0), 0.07, 1, Colors.red(color), Colors.green(color), Colors.blue(color), 0.0);
         }
         if (lastTicks > 5 && ticks >= 0 && ticks <= 5 && filling) {
             fills++;
             flareAt = Scene.clock();
-            Fx.motes(plate().add(0, 0.1, 0), 0.1, 10, Colors.red(color), Colors.green(color), Colors.blue(color), 0.2);
+            SceneFx.motes(plate().add(0, 0.1, 0), 0.1, 10, Colors.red(color), Colors.green(color), Colors.blue(color), 0.2);
+            SceneFx.splash(streamEnd(), 0.25, color, 0.6);
         }
         lastTicks = ticks;
     }
@@ -104,9 +107,18 @@ public class SpoutScene extends DepotScene {
         return color;
     }
 
+    /** Where Create's stream meets the work: under the spout, on top of the item. */
+    private Vec3 streamEnd() {
+        return new Vec3(top.x, top.y + 0.1, top.z);
+    }
+
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
         super.drawWorld(pose, buffers, camera, light);
+        SpoutBlockEntity spout = spout();
+        if (spout != null && spout.processingTicks > 5 && !slot(DepotMenu.MAIN).isEmpty()) {
+            SceneFx.pour(Vec3.atBottomCenterOf(spout.getBlockPos()), streamEnd(), color, 1);
+        }
         double age = Scene.clock() - flareAt;
         if (age < 0 || age > FLARE_TIME) {
             return;
@@ -116,6 +128,11 @@ public class SpoutScene extends DepotScene {
         EnchantFx.billboard(pose, buffers, Minecraft.getInstance().gameRenderer.getMainCamera(), plate().add(0, 0.12, 0),
                 FLARE_FROM + (FLARE_TO - FLARE_FROM) * k, age, EnchantFx.GLOW,
                 Colors.red(color) * fade, Colors.green(color) * fade, Colors.blue(color) * fade);
+    }
+
+    @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.SPOUTING;
     }
 
     @Override

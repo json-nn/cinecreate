@@ -4,7 +4,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.simibubi.create.content.kinetics.deployer.DeployerBlockEntity;
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.CameraRig;
-import dev.dyslexic.cinematic.client.Fx;
 import dev.dyslexic.cinematic.client.Picking;
 import java.util.List;
 import javax.annotation.Nullable;
@@ -20,6 +19,9 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.DeployerMenu;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * The Deployer's hand-off (DESIGN §7.10): the player holds the item out, the claw takes it as the fingers let go, and
@@ -221,13 +223,19 @@ public class DeployerScene extends CineStation<DeployerMenu> {
                 mc.gameMode.handleInventoryButtonClick(open.containerId, DeployerMenu.SWAP);
             }
             swaps++;
-            Fx.motes(claw(), 0.05, 4, 0.85f, 0.85f, 0.85f, 0.05);
+            SceneFx.motes(claw(), 0.05, 4, 0.85f, 0.85f, 0.85f, 0.05);
+            SceneFx.shock(claw(), side(), 0.18, SceneFx.STEEL, 0.6);
         });
     }
 
     @Override
     protected Vec3 restPoint(int slot) {
         return center();
+    }
+
+    @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.DEPLOYER;
     }
 
     @Override

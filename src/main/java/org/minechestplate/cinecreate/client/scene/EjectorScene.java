@@ -1,5 +1,6 @@
 package org.minechestplate.cinecreate.client.scene;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.simibubi.create.content.logistics.depot.EjectorBlock;
 import com.simibubi.create.content.logistics.depot.EjectorBlockEntity;
 import dev.dyslexic.cinematic.client.Anim;
@@ -7,6 +8,7 @@ import dev.dyslexic.cinematic.client.CameraRig;
 import dev.dyslexic.cinematic.client.Scene;
 import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -14,6 +16,9 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.client.ClientConfig;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * The Weighted Ejector (DESIGN §7.12): the item is set on the plate as on a depot. After the plate snaps, the eyes stay
@@ -40,6 +45,9 @@ public class EjectorScene extends DepotScene {
     /** The launch being watched: its flight time (Create's ticks), or -1. */
     private double flight = -1;
     private boolean landed;
+    /** The latest launch's flight time for its wind (watched or not), or -1; and whether its landing was shown. */
+    private double windFlight = -1;
+    private boolean windLanded;
 
     public EjectorScene(BlockPos pos, Direction side) {
         super(pos, side);
@@ -117,7 +125,11 @@ public class EjectorScene extends DepotScene {
             launchAt = Scene.clock();
             landed = false;
             boolean near = ejector.getTargetPosition().distSqr(pos) <= (double) WATCH_REACH * WATCH_REACH;
-            flight = ClientConfig.followLaunches() && near ? flightTicks(ejector) : -1;
+            windFlight = flightTicks(ejector);
+            windLanded = false;
+            flight = ClientConfig.followLaunches() && near ? windFlight : -1;
+            Vec3 start = ejector.getLaunchedItemLocation(0);
+            SceneFx.gust(top.add(0, 0.05, 0), ejector.getLaunchedItemLocation(1).subtract(start), 1);
         }
         lastState = state;
         double t = watching();
@@ -125,6 +137,26 @@ public class EjectorScene extends DepotScene {
             landed = true;
             watched++;
         }
+    }
+
+    /** The thrown item's wind, along Create's own path for it, and a ring of air where it lands. */
+    @Override
+    protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
+        super.drawWorld(pose, buffers, camera, light);
+        EjectorBlockEntity ejector = ejector();
+        double t = (Scene.clock() - launchAt) * 20;
+        if (ejector == null || windFlight < 0 || windLanded) {
+            return;
+        }
+        if (t < windFlight) {
+            Vec3 at = ejector.getLaunchedItemLocation((float) t);
+            SceneFx.trail(at, ejector.getLaunchedItemLocation((float) t + 1).subtract(at).scale(20), 1);
+            return;
+        }
+        windLanded = true;
+        Vec3 end = ejector.getLaunchedItemLocation((float) windFlight);
+        Vec3 ground = new Vec3(end.x, ejector.getTargetPosition().getY() + 0.02, end.z);
+        SceneFx.shock(ground, new Vec3(0, 1, 0), 0.4, SceneFx.WIND, 0.7);
     }
 
     @Override
@@ -164,6 +196,11 @@ public class EjectorScene extends DepotScene {
         }
         double far = Mth.clamp(Math.sqrt(ejector.getTargetPosition().distSqr(pos)) / FAR, 0, 1);
         return super.leanFov() - SQUINT * far * onItem(t);
+    }
+
+    @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.EJECTOR;
     }
 
     @Override

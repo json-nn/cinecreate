@@ -46,8 +46,11 @@ import org.lwjgl.glfw.GLFW;
 import org.minechestplate.cinecreate.bridge.CrafterMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
 import org.minechestplate.cinecreate.client.CiNotice;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.CrafterGroup;
 import org.minechestplate.cinecreate.station.Crafters;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * Mechanical Crafters (DESIGN §7.3): a wall of windows seen from the player's own eyes (the camera never leaves the
@@ -689,7 +692,8 @@ public class CrafterScene extends CineStation<CrafterMenu> {
             } else {
                 inserts++;
             }
-            Fx.motes(group.window(group.cells().get(cell)), 0.06, 4, 0.62f, 0.6f, 0.56f, 0.04);
+            SceneFx.motes(group.window(group.cells().get(cell)), 0.06, 4, 0.62f, 0.6f, 0.56f, 0.04);
+            SceneFx.dust(group.window(group.cells().get(cell)).add(side().scale(0.05)), SceneFx.DUST, 1, 0.05, 0.05);
         });
     }
 
@@ -793,6 +797,11 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     }
 
     @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.CRAFTER;
+    }
+
+    @Override
     protected Component sceneHint() {
         if (watching) {
             return Component.translatable("cinecreate.hint.mechanical_crafter.crafting");
@@ -842,7 +851,10 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     private void crafted(int cell) {
         crafts++;
         craftedAt = Scene.clock();
-        Fx.motes(group.window(group.cells().get(cell)), 0.15, 16, 1f, 0.95f, 0.78f, 0.25);
+        Vec3 window = group.window(group.cells().get(cell));
+        SceneFx.motes(window, 0.15, 16, 1f, 0.95f, 0.78f, 0.25);
+        SceneFx.shock(window.add(side().scale(0.02)), side(), 0.32, SceneFx.BRASS, 0.8);
+        SceneFx.brassSparks(window.add(side().scale(0.04)), side().add(0, 0.4, 0), 12, 1.6);
     }
 
     @Override

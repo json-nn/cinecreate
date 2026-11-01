@@ -3,7 +3,6 @@ package org.minechestplate.cinecreate.client.scene;
 import com.simibubi.create.content.kinetics.deployer.DeployerBlockEntity;
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.CameraRig;
-import dev.dyslexic.cinematic.client.Fx;
 import dev.dyslexic.cinematic.client.Picking;
 import dev.dyslexic.cinematic.client.Scene;
 import java.lang.reflect.Field;
@@ -17,7 +16,10 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.CineCreate;
 import org.minechestplate.cinecreate.bridge.DepotMenu;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.Composites;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * Application: a Deployer facing down onto the depot (DESIGN §7.10). Each punch is answered like a smaller press, and a
@@ -234,7 +236,8 @@ public class DeployingScene extends DepotScene {
         punchedSinceChange = true;
         kickAt = Scene.clock();
         Vec3 at = top.add(0, 0.12, 0);
-        Fx.hotSparks(at, new Vec3(0, 1, 0), 0.7, 12, 1.2);
+        SceneFx.hotSparks(at, new Vec3(0, 1, 0), 0.7, 12, 1.2);
+        SceneFx.shock(top.add(0, 0.015, 0), new Vec3(0, 1, 0), 0.3, SceneFx.STEEL, 0.7);
     }
 
     @Override
@@ -248,7 +251,7 @@ public class DeployingScene extends DepotScene {
             }
             punchedSinceChange = false;
             applied++;
-            Fx.motes(plate().add(0, 0.08, 0), 0.12, 12, 1f, 0.95f, 0.78f, 0.2);
+            SceneFx.motes(plate().add(0, 0.08, 0), 0.12, 12, 1f, 0.95f, 0.78f, 0.2);
         }
         lastLying = now.copy();
     }
@@ -256,6 +259,11 @@ public class DeployingScene extends DepotScene {
     @Override
     public double cameraKick() {
         return KICK * Math.exp(-(Scene.clock() - kickAt) * KICK_DECAY);
+    }
+
+    @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.DEPLOYING;
     }
 
     @Override

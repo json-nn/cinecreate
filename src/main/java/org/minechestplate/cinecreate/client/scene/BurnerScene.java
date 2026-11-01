@@ -29,6 +29,9 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.BurnerMenu;
 import org.minechestplate.cinecreate.client.FrameCounter;
+import org.minechestplate.cinecreate.client.fx.SceneFx;
+import org.minechestplate.cinecreate.station.SceneKind;
+import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
  * The Blaze Burner (DESIGN §7.7): crouched at the cage, the player tosses fuel to the blaze (a Blaze Cake makes it
@@ -273,10 +276,12 @@ public class BurnerScene extends CineStation<BurnerMenu> {
             if (cake) {
                 cakes++;
                 kickAt = now;
-                Fx.motes(blaze, 0.15, 18, 0.6f, 0.85f, 1f, 0.3);
+                SceneFx.motes(blaze, 0.15, 18, 0.6f, 0.85f, 1f, 0.3);
             } else {
-                Fx.motes(blaze, 0.1, 12, 1f, 0.6f, 0.23f, 0.15);
+                SceneFx.motes(blaze, 0.1, 12, 1f, 0.6f, 0.23f, 0.15);
             }
+            SceneFx.shock(blaze, new Vec3(0, 1, 0), 0.3, cake ? SceneFx.CAKE : SceneFx.EMBER, 0.6);
+            SceneFx.blowSparks(blaze.add(0, 0.1, 0), cake ? 16 : 10, 1.2);
         });
     }
 
@@ -291,7 +296,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     }
 
     private void sparks() {
-        Fx.hotSparks(cage().subtract(side().scale(0.05)), side().scale(-1).add(0, 0.5, 0), 0.6, 10, 1.6);
+        SceneFx.hotSparks(cage().subtract(side().scale(0.05)), side().scale(-1).add(0, 0.5, 0), 0.6, 10, 1.6);
     }
 
     /** Create's click with what the hand carries, on the side the player works from. */
@@ -346,6 +351,11 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     }
 
     @Override
+    public SceneKind sceneKind() {
+        return SceneKinds.BURNER;
+    }
+
+    @Override
     protected Component sceneHint() {
         if (Scene.clock() - refusedAt < REFUSED_HINT) {
             return Component.translatable("cinecreate.hint.blaze_burner.refused");
@@ -391,6 +401,10 @@ public class BurnerScene extends CineStation<BurnerMenu> {
 
     @Override
     protected void drawWorld(PoseStack pose, MultiBufferSource buffers, Vec3 camera, int light) {
+        HeatLevel heat = heat();
+        if (heat.isAtLeast(HeatLevel.FADING)) {
+            SceneFx.embers(blaze.add(0, 0.25, 0), 0.18, heat == HeatLevel.SEETHING, heat == HeatLevel.FADING ? 3 : 8);
+        }
         BurnerMenu menu = menu();
         Minecraft mc = Minecraft.getInstance();
         if (!hovered || moving() || menu == null || mc.level == null || menu.getCarried().isEmpty()) {

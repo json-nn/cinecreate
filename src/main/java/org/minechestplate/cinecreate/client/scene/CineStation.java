@@ -3,7 +3,6 @@ package org.minechestplate.cinecreate.client.scene;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.dyslexic.cinematic.api.client.AddonMenuStation;
 import dev.dyslexic.cinematic.client.CameraRig;
-import dev.dyslexic.cinematic.client.EnchantFx;
 import dev.dyslexic.cinematic.client.Hands;
 import dev.dyslexic.cinematic.client.Picking;
 import dev.dyslexic.cinematic.client.Scene;
@@ -25,6 +24,7 @@ import org.minechestplate.cinecreate.client.CiNotice;
 import org.minechestplate.cinecreate.client.layout.LayoutPanel;
 import org.minechestplate.cinecreate.client.layout.LayoutScene;
 import org.minechestplate.cinecreate.client.layout.Layouts;
+import org.minechestplate.cinecreate.station.SceneKind;
 
 /**
  * The base of our scenes: each says where its hands go, where the player stands and what it draws, and this adds
@@ -265,11 +265,12 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
         drawWorld(pose, buffers, camera, light);
         DevView.drawWorld(this, aim, standSpots, pose, buffers, camera);
         LayoutPanel.renderWorld(this, pose, buffers, camera);
-        if (notReady() != null) {
-            float pulse = (float) (0.55 + 0.25 * Math.sin(Scene.clock() * 6));
-            EnchantFx.billboard(pose, buffers, Minecraft.getInstance().gameRenderer.getMainCamera(), busyAt(), 0.13, Scene.clock() * 0.6,
-                    EnchantFx.CIRCLE, pulse, pulse * 0.22f, pulse * 0.18f);
-        }
+    }
+
+    /** The kind of block this scene plays at (its particle settings), or null. */
+    @Nullable
+    public SceneKind sceneKind() {
+        return null;
     }
 
     // ---- where the hands work (developer mode's editor); a scene with none has no editor ----
@@ -338,11 +339,6 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
     }
 
     protected abstract void sceneAct(int button, boolean shift);
-
-    /** Where the busy ring is drawn: the first hand spot, or the work. */
-    protected Vec3 busyAt() {
-        return spotNames().isEmpty() ? center() : spotBase(0);
-    }
 
     protected abstract Component sceneHint();
 
