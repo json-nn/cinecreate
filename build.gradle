@@ -101,6 +101,8 @@ neoForge {
             systemProperty 'cinecreate.smoke.from', (project.findProperty('smokeFrom') ?: '').toString()
             // the exploratory steps instead of the smoke: gradlew runSmoke -Pexplore=true
             systemProperty 'cinecreate.explore', (project.findProperty('explore') ?: 'false').toString()
+            // photos for the public pages instead: gradlew runSmoke -Pphoto=true
+            systemProperty 'cinecreate.photo', (project.findProperty('photo') ?: 'false').toString()
         }
 
         server {
