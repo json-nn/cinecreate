@@ -23,6 +23,7 @@ public final class ClientEvents {
         // раньше всех: сцены, которые CI готовит к кадру, видят уже его номер
         bus.addListener(EventPriority.HIGHEST, FrameCounter::onFrame);
         bus.addListener(WorkKey::onTick);
+        bus.addListener(ClientMode::onTick);
         bus.addListener(ClientMode::onUseKey);
         bus.addListener(DevView::onScreen);
         bus.addListener(LayoutPanel::onKey);

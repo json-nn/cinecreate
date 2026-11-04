@@ -122,7 +122,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
     }
 
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 eye = top.add(side().scale(0.8)).add(0, 0.7, 0);
         Vec3 look = top.add(0, -0.2, 0).subtract(eye);
         float yaw = (float) Math.toDegrees(Math.atan2(-look.x, look.z));
@@ -131,7 +131,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 64;
     }
 
@@ -146,7 +146,7 @@ public class MillstoneScene extends CineStation<MillstoneMenu> {
     }
 
     @Override
-    public double cameraKick() {
+    protected double sceneKick() {
         return grinding() ? HUM : 0;
     }
 

@@ -16,6 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.CineCreate;
 import org.minechestplate.cinecreate.bridge.DepotMenu;
+import org.minechestplate.cinecreate.client.ClientModeActions;
 import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.Composites;
 import org.minechestplate.cinecreate.station.SceneKind;
@@ -53,7 +54,7 @@ public class DeployingScene extends DepotScene {
 
     /** Back a little more than the press's pose and looking higher: the deployer's hand hangs clear of the drawer. */
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 eye = top.add(side().scale(1.25)).add(0, 0.5, 0);
         Vec3 look = top.add(0, 0.62, 0).subtract(eye);
         float yaw = (float) Math.toDegrees(Math.atan2(-look.x, look.z));
@@ -62,7 +63,7 @@ public class DeployingScene extends DepotScene {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 70;
     }
 
@@ -138,7 +139,9 @@ public class DeployingScene extends DepotScene {
         }
         DepotMenu menu = menu();
         ItemStack held = held();
-        if (menu == null || menu.getCarried().isEmpty() && held != null && held.isEmpty()) {
+        DeployerBlockEntity deployer = deployer();
+        if (menu == null || menu.getCarried().isEmpty() && held != null && held.isEmpty()
+                || Scene.clientOnly() && deployer != null && !ClientModeActions.handsOver(deployer.getBlockPos(), menu.getCarried())) {
             deny();
             return;
         }
@@ -178,7 +181,7 @@ public class DeployingScene extends DepotScene {
 
     /** The same, for any deployer. */
     @Nullable
-    static ItemStack held(@Nullable DeployerBlockEntity deployer) {
+    public static ItemStack held(@Nullable DeployerBlockEntity deployer) {
         if (deployer == null || heldItemMissing) {
             return null;
         }
@@ -257,7 +260,7 @@ public class DeployingScene extends DepotScene {
     }
 
     @Override
-    public double cameraKick() {
+    protected double sceneKick() {
         return KICK * Math.exp(-(Scene.clock() - kickAt) * KICK_DECAY);
     }
 

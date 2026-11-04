@@ -123,7 +123,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     }
 
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 eye = base.add(side().scale(CAMERA_BACK)).add(0, CAMERA_UP, 0);
         Vec3 look = blaze.subtract(eye);
         float yaw = (float) Math.toDegrees(Math.atan2(-look.x, look.z));
@@ -135,7 +135,7 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 66;
     }
 
@@ -368,12 +368,12 @@ public class BurnerScene extends CineStation<BurnerMenu> {
     }
 
     @Override
-    public double cameraKick() {
+    protected double sceneKick() {
         return cake ? CAKE_KICK * Math.exp(-(Scene.clock() - kickAt) * KICK_DECAY) : 0;
     }
 
     @Override
-    public double flash() {
+    protected double sceneFlash() {
         return flashStrength * Math.exp(-(Scene.clock() - flashAt) * FLASH_DECAY);
     }
 

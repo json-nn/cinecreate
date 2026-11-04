@@ -81,7 +81,6 @@ public class DepotScene extends CineStation<DepotMenu> {
         return setAt;
     }
 
-    /** Where a stack is laid and taken. */
     protected final Vec3 plate() {
         return setAt;
     }
@@ -102,7 +101,7 @@ public class DepotScene extends CineStation<DepotMenu> {
     }
 
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 eye = top.add(side().scale(0.72)).add(0, 0.62, 0);
         Vec3 look = top.add(side().scale(-0.04)).add(0, 0.06, 0).subtract(eye);
         float yaw = (float) Math.toDegrees(Math.atan2(-look.x, look.z));
@@ -111,7 +110,7 @@ public class DepotScene extends CineStation<DepotMenu> {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 64;
     }
 

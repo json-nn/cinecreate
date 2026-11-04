@@ -44,6 +44,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 import org.minechestplate.cinecreate.bridge.CrafterMenu;
+import org.minechestplate.cinecreate.client.ClientConfig;
 import org.minechestplate.cinecreate.client.FrameCounter;
 import org.minechestplate.cinecreate.client.CiNotice;
 import org.minechestplate.cinecreate.client.fx.SceneFx;
@@ -53,10 +54,9 @@ import org.minechestplate.cinecreate.station.SceneKind;
 import org.minechestplate.cinecreate.station.SceneKinds;
 
 /**
- * Mechanical Crafters (DESIGN §7.3): a wall of windows seen from the player's own eyes (the camera never leaves the
- * head: on a large wall a free camera felt like flying). By hand, a group up to 3×3, stepped back from until it is all
- * in frame; a window out of arm's reach gets a toss. With an Extendo Grip, any group up to 10×10 and only so, seen a
- * section (up to 3×3) at a time; windows out of the grip's reach are refused.
+ * Mechanical Crafters (DESIGN §7.3): a wall of windows seen from the player's own eyes. By hand, a group up to 3×3,
+ * stepped back from until it is all in frame; a window out of arm's reach gets a toss. With an Extendo Grip, any group
+ * up to 10×10, seen a section (up to 3×3) at a time; windows out of the grip's reach are refused.
  */
 public class CrafterScene extends CineStation<CrafterMenu> {
     /** A hand reaches this far from its shoulder; a farther window gets a toss. */
@@ -115,7 +115,6 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     public int inserts, tosses, takes, denials, crafts;
 
     private final CrafterGroup group;
-    /** The middle of the group's front. */
     private final Vec3 middle;
     /** By hand: how far back the player stands to have the whole group in view. */
     private final double distance;
@@ -365,7 +364,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
 
     /** From the player's eyes, a little above the middle so the windows sit between the drawer and the hint line. */
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 eye = eye();
         Vec3 at = sectionMiddle();
         double far = Math.max(0.3, gripMode ? eye.distanceTo(at) : eye.subtract(middle).dot(side()));
@@ -387,7 +386,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return lastFov + WIDEN * Anim.inOutCubic(watch);
     }
 
@@ -875,7 +874,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     /** With the grip, the cursor resting at a screen edge turns the head that way after a moment, and on while it stays. */
     private void dwell() {
         int dx = 0, dy = 0;
-        if (gripMode && Scene.phase == Scene.Phase.ACTIVE && !moving() && !watching && smokePin < 0) {
+        if (gripMode && ClientConfig.edgeTurn() && Scene.phase == Scene.Phase.ACTIVE && !moving() && !watching && smokePin < 0) {
             Window window = Minecraft.getInstance().getWindow();
             double[] mouse = Picking.mouseGui();
             double width = window.getGuiScaledWidth(), height = window.getGuiScaledHeight();
@@ -906,7 +905,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
     }
 
     @Override
-    public double flash() {
+    protected double sceneFlash() {
         return FLASH * Math.exp(-(Scene.clock() - craftedAt) * FLASH_DECAY);
     }
 
@@ -1006,7 +1005,7 @@ public class CrafterScene extends CineStation<CrafterMenu> {
      */
     @Override
     public void renderScreen(GuiGraphics g, Font font, float alpha) {
-        if (!gripMode || sectionColumns.length * sectionRows.length <= 1 || alpha < 0.05f) {
+        if (!gripMode || !ClientConfig.wallMap() || sectionColumns.length * sectionRows.length <= 1 || alpha < 0.05f) {
             return;
         }
         int dot = 4, gap = 1, step = dot + gap;

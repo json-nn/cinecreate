@@ -54,7 +54,7 @@ public final class DevView {
     }
 
     private static boolean ours() {
-        return Scene.station instanceof CineStation<?> || Scene.station instanceof ClientModeStation;
+        return Scene.station instanceof CineStation<?>;
     }
 
     private static boolean on() {

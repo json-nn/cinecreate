@@ -9,6 +9,8 @@
     "StationEventsMixin"
   ],
   "client": [
+    "ClientModeClickMixin",
+    "ClientModeSyncMixin",
     "SceneRefuseMixin"
   ],
   "server": [],

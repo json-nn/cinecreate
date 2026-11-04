@@ -18,7 +18,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
+import org.minechestplate.cinecreate.client.ClientConfig;
+import org.minechestplate.cinecreate.client.ClientModeActions;
 import org.minechestplate.cinecreate.client.FrameCounter;
 import org.minechestplate.cinecreate.client.CiNotice;
 import org.minechestplate.cinecreate.client.layout.LayoutPanel;
@@ -56,6 +59,7 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
     private boolean decided, fromAfar;
     /** Where CI would walk the player, as last asked (for the developer view). */
     private List<Vec3> standSpots = List.of();
+    private boolean acting;
 
     protected CineStation(BlockPos pos, Direction side, Class<M> menuType, int inputs) {
         super(pos, side, menuType, inputs);
@@ -69,6 +73,46 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
     /** CI's workable, with bare hands. */
     protected boolean bareWorkable(Vec3 feet) {
         return super.workable(feet);
+    }
+
+    /** CI's lean, from where the scene stands the player. */
+    protected abstract CameraRig.Pose sceneLean();
+
+    /** CI's leanFov there. */
+    protected double sceneFov() {
+        return super.leanFov();
+    }
+
+    /** In client mode, turned from the player's eyes to the same work ({@link Gaze}). */
+    @Override
+    public final CameraRig.Pose lean() {
+        CameraRig.Pose own = sceneLean();
+        return Scene.clientOnly() ? Gaze.from(own, center(), freeCamera()) : own;
+    }
+
+    @Override
+    public final double leanFov() {
+        return Scene.clientOnly() ? Gaze.fov(sceneLean(), center(), freeCamera(), sceneFov()) : sceneFov();
+    }
+
+    /** CI's cameraKick, the player's setting allowing. */
+    protected double sceneKick() {
+        return super.cameraKick();
+    }
+
+    @Override
+    public final double cameraKick() {
+        return ClientConfig.jolts() ? sceneKick() : 0;
+    }
+
+    /** CI's flash, the player's setting allowing. */
+    protected double sceneFlash() {
+        return super.flash();
+    }
+
+    @Override
+    public final double flash() {
+        return ClientConfig.flashes() ? sceneFlash() : 0;
     }
 
     /** CI's handTarget. */
@@ -321,12 +365,25 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
     }
 
     /**
-     * Why the scene's zone cannot be worked right now (the machine is mid-move: a raised plate, an arm out), or null.
-     * While busy, a click is refused, the hand stays back, the glow turns red and a ring marks the zone.
+     * Why the zone cannot be worked now (a machine mid-move), or null: a click is refused, the hand stays back, the
+     * glow turns red.
      */
     @Nullable
     protected Component notReady() {
         return null;
+    }
+
+    /** CI's slot check; in client mode also what Create's own click can put there, its reason shown on a click. */
+    @Override
+    protected boolean accepts(int slot, ItemStack stack) {
+        if (!super.accepts(slot, stack)) {
+            return false;
+        }
+        String refusal = Scene.clientOnly() ? ClientModeActions.refusal(menu(), slot, stack) : null;
+        if (refusal != null && acting) {
+            CiNotice.show(Component.translatable(refusal));
+        }
+        return refusal == null;
     }
 
     @Override
@@ -335,7 +392,12 @@ public abstract class CineStation<M extends AbstractContainerMenu> extends Addon
             deny();
             return;
         }
-        sceneAct(button, shift);
+        acting = true;
+        try {
+            sceneAct(button, shift);
+        } finally {
+            acting = false;
+        }
     }
 
     protected abstract void sceneAct(int button, boolean shift);

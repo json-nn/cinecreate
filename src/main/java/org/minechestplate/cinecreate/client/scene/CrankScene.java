@@ -20,6 +20,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 import org.minechestplate.cinecreate.bridge.CrankMenu;
+import org.minechestplate.cinecreate.client.ClientMode;
 import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.SceneKind;
 import org.minechestplate.cinecreate.station.SceneKinds;
@@ -108,7 +109,7 @@ public class CrankScene extends CineStation<CrankMenu> {
     }
 
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 eye = switch (facing) {
             case UP -> hub.add(side().scale(CAMERA * Math.cos(Math.toRadians(60)))).add(0, CAMERA * Math.sin(Math.toRadians(60)), 0);
             case DOWN -> hub.add(side().scale(CAMERA * Math.cos(Math.toRadians(35)))).add(0, -CAMERA * Math.sin(Math.toRadians(35)), 0);
@@ -123,7 +124,7 @@ public class CrankScene extends CineStation<CrankMenu> {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return FOV;
     }
 
@@ -267,7 +268,10 @@ public class CrankScene extends CineStation<CrankMenu> {
             return;
         }
         mc.gameMode.handleInventoryButtonClick(menu.containerId, back ? CrankMenu.TURN_BACK : CrankMenu.TURN);
-        crank.turn(back);
+        if (!ClientMode.active()) {
+            // в режиме клиента этот поворот уже сделал сам Create, предугадав свой клик
+            crank.turn(back);
+        }
         turns++;
     }
 

@@ -171,7 +171,7 @@ public class ValveScene extends CineStation<ValveMenu> {
 
     /** Far enough back that the whole wheel and both hands fit (DESIGN §7.4's 0.8 filled the frame). */
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 eye = switch (facing) {
             case UP -> hub.add(side().scale(CAMERA * Math.cos(Math.toRadians(60)))).add(0, CAMERA * Math.sin(Math.toRadians(60)), 0);
             case DOWN -> hub.add(side().scale(CAMERA * Math.cos(Math.toRadians(35)))).add(0, -CAMERA * Math.sin(Math.toRadians(35)), 0);
@@ -186,7 +186,7 @@ public class ValveScene extends CineStation<ValveMenu> {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 62;
     }
 
@@ -447,7 +447,7 @@ public class ValveScene extends CineStation<ValveMenu> {
     }
 
     @Override
-    public double cameraKick() {
+    protected double sceneKick() {
         return CLUNK * Math.exp(-(Scene.clock() - clunkAt) * CLUNK_DECAY);
     }
 

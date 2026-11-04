@@ -5,6 +5,7 @@ import com.simibubi.create.content.kinetics.deployer.DeployerBlockEntity;
 import dev.dyslexic.cinematic.client.Anim;
 import dev.dyslexic.cinematic.client.CameraRig;
 import dev.dyslexic.cinematic.client.Picking;
+import dev.dyslexic.cinematic.client.Scene;
 import java.util.List;
 import javax.annotation.Nullable;
 import net.minecraft.client.Camera;
@@ -19,6 +20,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.bridge.DeployerMenu;
+import org.minechestplate.cinecreate.client.ClientModeActions;
 import org.minechestplate.cinecreate.client.fx.SceneFx;
 import org.minechestplate.cinecreate.station.SceneKind;
 import org.minechestplate.cinecreate.station.SceneKinds;
@@ -121,7 +123,7 @@ public class DeployerScene extends CineStation<DeployerMenu> {
     }
 
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 at = center();
         Vec3 eye = at.add(side().scale(1.05)).add(0, 0.2, 0);
         Vec3 look = at.subtract(eye);
@@ -131,7 +133,7 @@ public class DeployerScene extends CineStation<DeployerMenu> {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 64;
     }
 
@@ -212,7 +214,8 @@ public class DeployerScene extends CineStation<DeployerMenu> {
         Minecraft client = Minecraft.getInstance();
         ItemStack theirs = client.level != null && client.level.getBlockEntity(pos) instanceof DeployerBlockEntity deployer
                 ? DeployingScene.held(deployer) : null;
-        if (menu.getCarried().isEmpty() && theirs != null && theirs.isEmpty()) {
+        if (menu.getCarried().isEmpty() && theirs != null && theirs.isEmpty()
+                || Scene.clientOnly() && !ClientModeActions.handsOver(pos, menu.getCarried())) {
             deny();
             return;
         }

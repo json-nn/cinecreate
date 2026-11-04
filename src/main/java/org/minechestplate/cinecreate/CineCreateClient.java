@@ -15,7 +15,6 @@ import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
-import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforge.common.NeoForge;
@@ -36,9 +35,9 @@ import org.minechestplate.cinecreate.client.ClientConfig;
 import org.minechestplate.cinecreate.client.ClientEvents;
 import org.minechestplate.cinecreate.client.ClientMode;
 import org.minechestplate.cinecreate.client.WorkKey;
+import org.minechestplate.cinecreate.client.config.SettingsScreen;
 import org.minechestplate.cinecreate.client.scene.BasinScene;
 import org.minechestplate.cinecreate.client.scene.BurnerScene;
-import org.minechestplate.cinecreate.client.scene.ClientModeStation;
 import org.minechestplate.cinecreate.client.scene.CrafterScene;
 import org.minechestplate.cinecreate.client.scene.CrankScene;
 import org.minechestplate.cinecreate.client.scene.DeployerScene;
@@ -65,7 +64,7 @@ public class CineCreateClient {
 
     public CineCreateClient(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
-        modContainer.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
+        modContainer.registerExtensionPoint(IConfigScreenFactory.class, (container, parent) -> new SettingsScreen(parent));
         // общий код (хук 3, рабочие стороны станции) спрашивает о выборе своего игрока здесь
         ScenePrefs.useOnClient(ClientConfig::trigger, () -> Minecraft.getInstance().isSameThread());
         Bridge.serverRunsScenes = ClientMode::serverHasAddon;
@@ -107,11 +106,10 @@ public class CineCreateClient {
         });
     }
 
-    /** The block's scene, once CI has taken its station; on a server without the add-on, the client-mode scene. */
+    /** The block's scene, once CI has taken its station. */
     private static void scene(SceneBlock block, AddonScenes.Factory factory) {
         if (SceneBlocks.registered(block)) {
-            AddonScenes.register(block.sceneId(), (pos, state, player, side) -> ClientMode.active()
-                    ? new ClientModeStation(pos, side, state) : factory.create(pos, state, player, side));
+            AddonScenes.register(block.sceneId(), factory);
         }
     }
 

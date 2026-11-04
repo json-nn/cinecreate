@@ -26,10 +26,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import org.joml.Vector3f;
 
-/**
- * The shapes CI's sparks ({@code Fx}) do not have, drawn the way CI draws its own: drops, ripples, wind, dust, bubbles
- * and chips. Glow goes through CI's textures and additive look; dust and chips are lit like the world around them.
- */
+/** Particle shapes CI's sparks lack, drawn as CI draws its own: its textures, additive glow. */
 public final class Particles {
     private enum Kind { DROP, RIPPLE, WISP, PUFF, BUBBLE, CHIP }
 
@@ -64,7 +61,6 @@ public final class Particles {
         });
     }
 
-    /** Whether one more may start: room left, and the player's particle settings ({@link SceneFx#keep()}). */
     static boolean room() {
         return LIVE.size() < MOST && SceneFx.keep();
     }
@@ -72,8 +68,8 @@ public final class Particles {
     // ---- starting them -------------------------------------------------------------------------------
 
     /**
-     * A drop of liquid: falls, and where it meets {@code floor} within {@code pool} of {@code poolAt} leaves a small ripple;
-     * past the pool's edge it falls on and fades.
+     * Meeting {@code floor} within {@code pool} of {@code poolAt} it leaves a ripple; beyond that it falls on and
+     * fades.
      */
     static void drop(Vec3 at, Vec3 velocity, double life, double size, int color, double gravity, double floor, Vec3 poolAt, double pool) {
         P p = start(Kind.DROP, at, life, size, color);
@@ -86,7 +82,7 @@ public final class Particles {
         }
     }
 
-    /** A ring spreading in the plane facing {@code normal}, from {@code from} to {@code to} wide. */
+    /** In the plane facing {@code normal}, growing from {@code from} to {@code to} wide. */
     static void ripple(Vec3 at, Vec3 normal, double from, double to, double life, int color, float brightness) {
         P p = start(Kind.RIPPLE, at, life, from, color);
         if (p != null) {
@@ -96,7 +92,7 @@ public final class Particles {
         }
     }
 
-    /** A streak of wind: drifts, its path turning about {@code curlAxis} by {@code curl} radians a second. */
+    /** Its path turns about {@code curlAxis} by {@code curl} radians a second. */
     static void wisp(Vec3 at, Vec3 velocity, double life, double width, int color, float brightness, Vec3 curlAxis, double curl) {
         P p = start(Kind.WISP, at, life, width, color);
         if (p != null) {
@@ -109,9 +105,8 @@ public final class Particles {
     }
 
     /**
-     * A streak circling {@code center} about {@code axis} at {@code omega} radians a second, its distance growing by
-     * {@code drift} of itself a second (negative: spiralling in); {@code close}: it rides with something in the hands and
-     * may come near the eye.
+     * Circles {@code center} at {@code omega} radians a second, its distance growing by {@code drift} of itself a
+     * second (negative: inward); {@code close}: it may come near the eye.
      */
     static void orbit(Vec3 at, Vec3 center, Vec3 axis, double omega, double drift, double life, double width, int color, float brightness,
             boolean close) {
@@ -127,7 +122,7 @@ public final class Particles {
         }
     }
 
-    /** A soft cloud (dust, flour, steam): grows from {@code size} to {@code end}, rising and fading. */
+    /** Grows from {@code size} to {@code end}, rising and fading. */
     static void puff(Vec3 at, Vec3 velocity, double life, double size, double end, int color, float alpha) {
         P p = start(Kind.PUFF, at, life, size, color);
         if (p != null) {
@@ -140,7 +135,6 @@ public final class Particles {
         }
     }
 
-    /** A bubble on a surface: swells, then pops into a small ring. */
     static void bubble(Vec3 at, double life, double size, int color) {
         P p = start(Kind.BUBBLE, at, life, size, color);
         if (p != null) {
@@ -148,7 +142,7 @@ public final class Particles {
         }
     }
 
-    /** A tumbling chip of the item's own texture; bounces once on {@code floor} (NaN: none) and settles. */
+    /** Bounces once on {@code floor} (NaN: none) and settles. */
     static void chip(Vec3 at, Vec3 velocity, double life, double size, ItemStack stack, double floor) {
         TextureAtlasSprite sprite = sprite(stack);
         if (sprite == null) {
@@ -235,7 +229,7 @@ public final class Particles {
         buffers.endBatch();
     }
 
-    /** Moves one along; false when it is done (a drop that met its floor). */
+    /** False when it is done. */
     private static boolean step(P p, double dt) {
         if (p.center != null) {
             Vec3 arm = p.at.subtract(p.center);
@@ -333,7 +327,7 @@ public final class Particles {
         return Math.min(1, Math.max(0, (at.distanceTo(cam) - from) / span));
     }
 
-    /** A strip through the points (head first), turned to the camera; the texture runs along it, head to tail. */
+    /** Head first; the texture runs head to tail. */
     private static void ribbon(VertexConsumer vc, PoseStack pose, Vec3 cam, List<Vec3> points, double width, float r, float g, float b) {
         int n = points.size();
         Vec3[] across = new Vec3[n];
@@ -356,7 +350,6 @@ public final class Particles {
         }
     }
 
-    /** A square in the plane facing {@code normal}, turned by {@code turn}. */
     private static void plane(VertexConsumer vc, PoseStack pose, Vec3 cam, Vec3 center, Vec3 normal, double radius, double turn,
             float r, float g, float b, int light, float alpha) {
         Vec3 u = Math.abs(normal.y) > 0.9 ? new Vec3(1, 0, 0) : UP.cross(normal).normalize();
@@ -368,7 +361,6 @@ public final class Particles {
                 r, g, b, alpha, light, normal);
     }
 
-    /** A square facing the camera. */
     private static void facing(VertexConsumer vc, PoseStack pose, Camera camera, Vec3 center, double radius, double turn,
             float r, float g, float b, float alpha, int light) {
         Vector3f look = camera.getLookVector();
@@ -406,7 +398,7 @@ public final class Particles {
         return Math.max(0, Math.min(255, Math.round(v * 255)));
     }
 
-    /** Turns v about the unit vector k, right-handed. */
+    /** Right-handed, about the unit vector k. */
     static Vec3 rotate(Vec3 v, Vec3 k, double radians) {
         double cos = Math.cos(radians), sin = Math.sin(radians);
         return v.scale(cos).add(k.cross(v).scale(sin)).add(k.scale(k.dot(v) * (1 - cos)));
@@ -414,7 +406,7 @@ public final class Particles {
 
     private static final int[] STARTED = new int[Kind.values().length];
 
-    /** Development (SmokeTest): how many of a kind ("WISP", "DROP"...) have started so far. */
+    /** Development (SmokeTest). */
     public static int started(String kind) {
         return STARTED[Kind.valueOf(kind).ordinal()];
     }

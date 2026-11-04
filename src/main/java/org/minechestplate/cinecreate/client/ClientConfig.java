@@ -25,11 +25,14 @@ public final class ClientConfig {
 
     public static final ModConfigSpec SPEC;
     private static final Map<ResourceLocation, ModConfigSpec.EnumValue<Trigger>> TRIGGERS;
-    private static final ModConfigSpec.BooleanValue INVITATION;
-    private static final ModConfigSpec.BooleanValue FOLLOW_LAUNCHES;
-    private static final ModConfigSpec.BooleanValue CLIENT_MODE;
-    private static final ModConfigSpec.BooleanValue PARTICLES, FOLLOW_GAME;
-    private static final ModConfigSpec.IntValue AMOUNT;
+    public static final ModConfigSpec.BooleanValue INVITATION;
+    public static final ModConfigSpec.BooleanValue FOLLOW_LAUNCHES;
+    public static final ModConfigSpec.IntValue WATCH_REACH;
+    public static final ModConfigSpec.BooleanValue WALL_MAP, EDGE_TURN;
+    public static final ModConfigSpec.BooleanValue JOLTS, FLASHES;
+    public static final ModConfigSpec.BooleanValue CLIENT_MODE;
+    public static final ModConfigSpec.BooleanValue PARTICLES, FOLLOW_GAME;
+    public static final ModConfigSpec.IntValue AMOUNT;
     private static final Map<ResourceLocation, ModConfigSpec.BooleanValue> PARTICLES_PER_KIND;
 
     static {
@@ -38,32 +41,44 @@ public final class ClientConfig {
         b.translation("cinecreate.configuration.scenes").push("scenes");
         for (SceneKind kind : SceneKinds.all()) {
             triggers.put(kind.id(), b
-                    .comment("How the " + kind.name() + " scene starts. USE: a right-click starts it. KEY: a right-click is"
-                            + " Create's own, the \"Work at the machine\" key (H) starts it. OFF: never a scene.")
+                    .comment("How the " + kind.name() + " scene starts: USE = right-click, KEY = press H (right-click stays"
+                            + " normal), OFF = no scene.")
                     .translation("cinecreate.configuration." + kind.name())
                     .defineEnum(kind.name(), kind.trigger()));
         }
         b.pop();
-        INVITATION = b.comment("The \"[H] Work at the depot\" plate under the crosshair at blocks whose scene starts on the key."
-                        + " The key works without it too.")
+        INVITATION = b.comment("Show the \"[H] Work at...\" hint under the crosshair on blocks set to KEY.")
                 .translation("cinecreate.configuration.invitation")
                 .define("invitation", true);
-        FOLLOW_LAUNCHES = b.comment("At a Weighted Ejector, the head turns to follow what it throws to where it lands, then back.")
+        FOLLOW_LAUNCHES = b.comment("At a Weighted Ejector, the view follows what it throws.")
                 .translation("cinecreate.configuration.followLaunches")
                 .define("followLaunches", true);
-        CLIENT_MODE = b.comment("On a server without this add-on, a right-click on these blocks is still Create's own; with this"
-                        + " on, it is played out as a scene (the item in hand is used; 1-9 or the wheel choose it). Taken when joining"
-                        + " a server: a change applies from the next connection.")
+        WATCH_REACH = b.comment("Farthest launch target the view follows, in blocks.")
+                .translation("cinecreate.configuration.watchReach")
+                .defineInRange("watchReach", 32, 8, 64);
+        WALL_MAP = b.comment("With an Extendo Grip on a big crafter wall, show a map of the part in view.")
+                .translation("cinecreate.configuration.wallMap")
+                .define("wallMap", true);
+        EDGE_TURN = b.comment("With an Extendo Grip on a big crafter wall, resting the cursor at a screen edge turns the view.")
+                .translation("cinecreate.configuration.edgeTurn")
+                .define("edgeTurn", true);
+        JOLTS = b.comment("Small camera kicks on press strokes, impacts and launches.")
+                .translation("cinecreate.configuration.jolts")
+                .define("cameraJolts", true);
+        FLASHES = b.comment("A soft flash when something is made.")
+                .translation("cinecreate.configuration.flashes")
+                .define("resultFlashes", true);
+        CLIENT_MODE = b.comment("Play the scenes on servers without this add-on (applies the next time you join).")
                 .translation("cinecreate.configuration.clientMode")
                 .define("clientMode", false);
         b.translation("cinecreate.configuration.particles").push("particles");
-        PARTICLES = b.comment("The scenes' particles (drops, rings, wind, dust, sparks): off turns them all off at once.")
+        PARTICLES = b.comment("All scene particles on or off.")
                 .translation("cinecreate.configuration.particles.enabled")
                 .define("enabled", true);
-        AMOUNT = b.comment("How many of them start, in percent.")
+        AMOUNT = b.comment("How many particles spawn, in percent.")
                 .translation("cinecreate.configuration.particles.amount")
                 .defineInRange("amount", 100, 0, 100);
-        FOLLOW_GAME = b.comment("Follow the game's own Particles setting: Decreased about half, Minimal none.")
+        FOLLOW_GAME = b.comment("Use fewer particles when Minecraft's Particles option is lowered.")
                 .translation("cinecreate.configuration.particles.followGame")
                 .define("followGame", true);
         Map<ResourceLocation, ModConfigSpec.BooleanValue> perKind = new LinkedHashMap<>();
@@ -93,6 +108,34 @@ public final class ClientConfig {
 
     public static boolean followLaunches() {
         return !SPEC.isLoaded() || FOLLOW_LAUNCHES.get();
+    }
+
+    public static int watchReach() {
+        return SPEC.isLoaded() ? WATCH_REACH.get() : WATCH_REACH.getDefault();
+    }
+
+    public static boolean wallMap() {
+        return !SPEC.isLoaded() || WALL_MAP.get();
+    }
+
+    public static boolean edgeTurn() {
+        return !SPEC.isLoaded() || EDGE_TURN.get();
+    }
+
+    public static boolean jolts() {
+        return !SPEC.isLoaded() || JOLTS.get();
+    }
+
+    public static boolean flashes() {
+        return !SPEC.isLoaded() || FLASHES.get();
+    }
+
+    public static ModConfigSpec.EnumValue<Trigger> triggerValue(SceneKind kind) {
+        return TRIGGERS.get(kind.id());
+    }
+
+    public static ModConfigSpec.BooleanValue particlesValue(SceneKind kind) {
+        return PARTICLES_PER_KIND.get(kind.id());
     }
 
     public static boolean clientMode() {
@@ -139,7 +182,7 @@ public final class ClientConfig {
     }
 
     /** At login and after every change: the server decides right-clicks by the same choices. */
-    static void sendToServer() {
+    public static void sendToServer() {
         ClientPacketListener connection = Minecraft.getInstance().getConnection();
         if (connection == null || !connection.hasChannel(ScenePrefsPayload.TYPE)) {
             return;

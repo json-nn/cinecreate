@@ -23,7 +23,7 @@ import org.minechestplate.cinecreate.station.SceneKinds;
 /**
  * The Weighted Ejector (DESIGN §7.12): the item is set on the plate as on a depot. After the plate snaps, the eyes stay
  * where they lean and only the head turns, following the item to where it lands (as far as a neck turns) and back. Only
- * with the "Watch launches" setting on and the target within {@link #WATCH_REACH} blocks.
+ * with the "Watch launches" setting on and the target within its reach.
  */
 public class EjectorScene extends DepotScene {
     /** The snap of the plate: kick, and how long it fades (seconds). */
@@ -34,7 +34,6 @@ public class EjectorScene extends DepotScene {
     static final float TURN = 110, UP = 70, DOWN = 60;
     /** A far landing is watched a little narrower (degrees off the field of view at {@link #FAR} blocks and beyond). */
     static final double SQUINT = 12, FAR = 16;
-    static final int WATCH_REACH = 32;
 
     /** Development (SmokeTest): launches seen, watched to the landing, and the largest head turn (degrees). */
     public int launches, watched;
@@ -124,7 +123,7 @@ public class EjectorScene extends DepotScene {
             launches++;
             launchAt = Scene.clock();
             landed = false;
-            boolean near = ejector.getTargetPosition().distSqr(pos) <= (double) WATCH_REACH * WATCH_REACH;
+            boolean near = ejector.getTargetPosition().distSqr(pos) <= (double) ClientConfig.watchReach() * ClientConfig.watchReach();
             windFlight = flightTicks(ejector);
             windLanded = false;
             flight = ClientConfig.followLaunches() && near ? windFlight : -1;
@@ -160,14 +159,14 @@ public class EjectorScene extends DepotScene {
     }
 
     @Override
-    public double cameraKick() {
+    protected double sceneKick() {
         double t = Scene.clock() - launchAt;
         return t >= 0 && t < KICK_TIME ? KICK * (1 - t / KICK_TIME) : 0;
     }
 
     @Override
-    public CameraRig.Pose lean() {
-        CameraRig.Pose home = super.lean();
+    protected CameraRig.Pose sceneLean() {
+        CameraRig.Pose home = super.sceneLean();
         double t = watching();
         EjectorBlockEntity ejector = ejector();
         if (t < 0 || ejector == null) {
@@ -188,14 +187,14 @@ public class EjectorScene extends DepotScene {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         double t = watching();
         EjectorBlockEntity ejector = ejector();
         if (t < 0 || ejector == null) {
-            return super.leanFov();
+            return super.sceneFov();
         }
         double far = Mth.clamp(Math.sqrt(ejector.getTargetPosition().distSqr(pos)) / FAR, 0, 1);
-        return super.leanFov() - SQUINT * far * onItem(t);
+        return super.sceneFov() - SQUINT * far * onItem(t);
     }
 
     @Override

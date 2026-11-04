@@ -35,9 +35,8 @@ import org.minechestplate.cinecreate.station.SceneKind;
 import org.minechestplate.cinecreate.station.Trigger;
 
 /**
- * The "Work at the machine" key and, where a scene starts only on the key, its "[H] Work at the depot" plate under the
- * crosshair (DESIGN §5.3). It defaults to H, the same as Cinematic Interactions' campfire, so H always means "do this
- * cinematically" (NeoForge hands a key to every mapping on it, and each one acts only on its own blocks).
+ * The "Work at the machine" key and its "[H] Work at the depot" plate under the crosshair (DESIGN §5.3). H, as CI's
+ * campfire: NeoForge hands a key to every mapping on it.
  */
 public final class WorkKey {
     private WorkKey() {}
@@ -67,6 +66,7 @@ public final class WorkKey {
     @Nullable
     private static Target lookedNow;
     private static int lookedTick = -1, ticks;
+    private static boolean clientModeNow;
 
     static void onTick(ClientTickEvent.Post event) {
         ticks++;
@@ -86,7 +86,7 @@ public final class WorkKey {
         }
     }
 
-    /** The block the plate invites to right now, or null (SmokeTest reads it too). */
+    /** The block the plate invites to, or null. */
     @Nullable
     public static BlockPos invited() {
         Target target = invitation();
@@ -100,7 +100,7 @@ public final class WorkKey {
             return null;
         }
         if (ClientMode.active()) {
-            return target;
+            return clientModeNow ? target : null;
         }
         Reach.Plan plan = plan(Minecraft.getInstance().player, target.pos());
         return plan != null && plan.scene() ? target : null;
@@ -141,6 +141,7 @@ public final class WorkKey {
         if (lookedTick != ticks) {
             lookedTick = ticks;
             lookedNow = lookUp();
+            clientModeNow = lookedNow != null && ClientMode.canBegin(lookedNow.pos());
         }
         return lookedNow;
     }

@@ -86,7 +86,6 @@ public class SawScene extends CineStation<SawMenu> {
     private double shapesAt = -10;
     private boolean wasApplied;
     private double dust;
-    /** The scene's frame (out from the table, across it), once worked out. */
     @Nullable
     private Vec3[] frame;
 
@@ -107,7 +106,6 @@ public class SawScene extends CineStation<SawMenu> {
         return !slot(SawMenu.TABLE).isEmpty() || !piece().isEmpty();
     }
 
-    /** The first cut piece on the table (Create's result slots), or nothing. */
     private ItemStack piece() {
         SawBlockEntity saw = saw();
         for (int i = 1; saw != null && i < saw.inventory.getSlots(); i++) {
@@ -205,9 +203,8 @@ public class SawScene extends CineStation<SawMenu> {
     }
 
     /**
-     * The scene's frame: out from the table and across it. From the saw's side it is the side's; from its end the blade
-     * (a flat texture) would be seen edge-on, invisible, so the whole frame (camera, dial, hands, where the player stands)
-     * turns {@link #TURN}° about the table, towards whichever side is clear.
+     * Out from the table and across it. From the saw's end the flat blade would be seen edge-on, so the whole frame
+     * turns {@link #TURN}° about the table, toward the clear side.
      */
     private Vec3[] frame() {
         if (frame != null) {
@@ -254,7 +251,7 @@ public class SawScene extends CineStation<SawMenu> {
 
     /** As CI's stonecutter, from the scene's frame. */
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 eye = top.add(out()).add(0, 0.95, 0);
         Vec3 look = top.add(out().scale(-0.05)).add(0, 0.25, 0).subtract(eye);
         float yaw = (float) Math.toDegrees(Math.atan2(-look.x, look.z));
@@ -263,11 +260,11 @@ public class SawScene extends CineStation<SawMenu> {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 64;
     }
 
-    /** Development (SmokeTest): how far the scene's view is off the blade's plane, in degrees (0: edge-on). */
+    /** Development (SmokeTest): degrees off the blade's plane (0: edge-on). */
     public double bladeAngle() {
         CameraRig.Pose lean = lean();
         Vec3 look = Vec3.directionFromRotation(lean.pitch(), lean.yaw());
@@ -297,7 +294,7 @@ public class SawScene extends CineStation<SawMenu> {
     }
 
     @Override
-    public double cameraKick() {
+    protected double sceneKick() {
         return cutting() ? 0.04 : 0;
     }
 
@@ -370,7 +367,6 @@ public class SawScene extends CineStation<SawMenu> {
         return onArc(left ? 176 : 4, 0.03);
     }
 
-    /** The arc's point at this angle, raised by lift. */
     private Vec3 onArc(double degrees, double lift) {
         double a = Math.toRadians(degrees);
         return spotBase(1).add(across().scale(Math.cos(a) * DIAL_WIDE)).add(0, Math.sin(a) * DIAL_HIGH + lift, 0);

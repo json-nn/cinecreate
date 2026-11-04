@@ -78,12 +78,12 @@ public class FanScene extends DepotScene {
     }
 
     @Override
-    public double leanFov() {
-        return super.leanFov() - (kind == null ? 0 : NARROW);
+    protected double sceneFov() {
+        return super.sceneFov() - (kind == null ? 0 : NARROW);
     }
 
     @Override
-    public double cameraKick() {
+    protected double sceneKick() {
         return kind == null ? 0 : WIND;
     }
 
@@ -140,7 +140,7 @@ public class FanScene extends DepotScene {
     }
 
     @Override
-    public double flash() {
+    protected double sceneFlash() {
         return kind == null ? 0 : kind.flash * Math.exp(-(Scene.clock() - flashAt) * 10);
     }
 

@@ -43,12 +43,12 @@ public class SpoutScene extends DepotScene {
     }
 
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         return machineLean();
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 66;
     }
 
@@ -98,7 +98,7 @@ public class SpoutScene extends DepotScene {
     }
 
     @Override
-    public double flash() {
+    protected double sceneFlash() {
         return FLASH * Math.exp(-(Scene.clock() - flareAt) * FLASH_DECAY);
     }
 

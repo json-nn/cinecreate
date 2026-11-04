@@ -9,10 +9,8 @@ import org.minechestplate.cinecreate.client.ClientConfig;
 import org.minechestplate.cinecreate.client.scene.CineStation;
 
 /**
- * The scenes' effects, made of CI's sparks and our {@link Particles}: liquids (splashes, stirring, pouring), air (gusts,
- * trails, a fan's stream, things turning), dust, chips of the work itself, hard hits and fire. Calls marked "once a
- * frame" keep a steady rate whatever the frame rate. Everything here, CI's sparks included, starts only as far as the
- * player's particle settings let it (all on or off, each block, the amount, the game's own setting).
+ * The scenes' effects, of CI's sparks and our {@link Particles}. "Once a frame" calls keep a steady rate at any frame
+ * rate; everything starts only as far as the player's particle settings let it.
  */
 public final class SceneFx {
     public static final int WIND = 0xDCE8F2, BRASS = 0xF2C25A, STEEL = 0xC8D2DC, DUST = 0xCBBFA8, FLOUR = 0xF2ECDD,
@@ -23,18 +21,16 @@ public final class SceneFx {
 
     private SceneFx() {}
 
-    /** How much of the playing scene's particles start, 0..1 ({@link ClientConfig#particleShare}). */
+    /** 0..1 of the playing scene's particles ({@link ClientConfig#particleShare}). */
     static double share() {
         return ClientConfig.particleShare(Scene.station instanceof CineStation<?> scene ? scene.sceneKind() : null);
     }
 
-    /** Whether one more starts, by {@link #share()}. */
     static boolean keep() {
         double share = share();
         return share >= 1 || share > 0 && RANDOM.nextDouble() < share;
     }
 
-    /** {@code count} cut down to the share. */
     private static int scaled(int count) {
         double n = count * share();
         int whole = (int) n;
@@ -86,7 +82,6 @@ public final class SceneFx {
 
     // ---- liquids -------------------------------------------------------------------------------------
 
-    /** Something landing in liquid {@code radius} wide: drops thrown up and out, rings on the surface. */
     public static void splash(Vec3 surface, double radius, int color, double strength) {
         int drops = (int) Math.round(12 * strength);
         for (int i = 0; i < drops; i++) {
@@ -100,10 +95,7 @@ public final class SceneFx {
         Particles.ripple(ring, UP, 0.02, 0.1 + 0.06 * strength, 0.45, 0xFFFFFF, 0.35f);
     }
 
-    /**
-     * Liquid stirred by a whisk turning at {@code omega} (radians a second, signed): rings, drops flung off the whisk, the
-     * liquid's glow circling, bubbles. Once a frame.
-     */
+    /** {@code omega}: the whisk's turn, radians a second, signed. Once a frame. */
     public static void churn(Vec3 surface, double radius, int color, double omega, boolean boiling) {
         double spin = Math.signum(omega) * Math.min(Math.abs(omega), 14);
         for (int n = rate(9); n > 0; n--) {
@@ -127,7 +119,7 @@ public final class SceneFx {
         }
     }
 
-    /** A heated liquid at rest: bubbles, and now and then a breath of steam (more for a hotter fire). Once a frame. */
+    /** Once a frame. */
     public static void simmer(Vec3 surface, double radius, int color, boolean hot) {
         for (int n = rate(hot ? 9 : 4); n > 0; n--) {
             Particles.bubble(around(surface, radius).add(0, 0.006, 0), 0.4 + RANDOM.nextDouble() * 0.4, 0.014 + RANDOM.nextDouble() * 0.02, color);
@@ -137,7 +129,7 @@ public final class SceneFx {
         }
     }
 
-    /** A thin stream falling from {@code from} to {@code to}: drops along it, rings and spray where it lands. Once a frame. */
+    /** Once a frame. */
     public static void pour(Vec3 from, Vec3 to, int color, double strength) {
         double fall = Math.max(0.05, from.y - to.y);
         double time = Math.sqrt(2 * fall / 9);
@@ -157,7 +149,7 @@ public final class SceneFx {
         }
     }
 
-    /** Liquid running into a grate: its glow spiralling in, small rings, now and then a bubble. Once a frame. */
+    /** Once a frame. */
     public static void drain(Vec3 grate, double radius, int color) {
         for (int n = rate(12); n > 0; n--) {
             double a = angle(), r = radius * (0.6 + RANDOM.nextDouble() * 0.4);
@@ -174,7 +166,6 @@ public final class SceneFx {
 
     // ---- air -----------------------------------------------------------------------------------------
 
-    /** The air a launch throws: streaks shooting along {@code direction}, a ring of air round the plate, a little dust. */
     public static void gust(Vec3 at, Vec3 direction, double strength) {
         Vec3 dir = direction.normalize(), side = perpendicular(dir), other = dir.cross(side);
         for (int i = 0; i < Math.round(10 * strength); i++) {
@@ -194,7 +185,7 @@ public final class SceneFx {
         dust(at, DUST, (int) Math.round(4 * strength), 0.08, 0.3);
     }
 
-    /** The air off something flying at {@code velocity} (blocks a second): streaks spiralling after it. Once a frame. */
+    /** {@code velocity} in blocks a second. Once a frame. */
     public static void trail(Vec3 at, Vec3 velocity, double strength) {
         double speed = velocity.length();
         if (speed < 0.5) {
@@ -210,7 +201,7 @@ public final class SceneFx {
         }
     }
 
-    /** A fan's air flowing past {@code at}: streaks along {@code flow} through a window {@code width} wide. Once a frame. */
+    /** Once a frame. */
     public static void breeze(Vec3 at, Vec3 flow, double width, int color, float brightness) {
         Vec3 dir = flow.normalize(), side = perpendicular(dir), other = dir.cross(side);
         for (int n = rate(18); n > 0; n--) {
@@ -221,7 +212,7 @@ public final class SceneFx {
         }
     }
 
-    /** Air dragged round by something turning at {@code omega} (radians a second): streaks circling its axis. Once a frame. */
+    /** {@code omega} in radians a second. Once a frame. */
     public static void swirl(Vec3 center, Vec3 axis, double radius, double omega, int color, double strength) {
         if (Math.abs(omega) < 0.5) {
             return;
@@ -237,7 +228,6 @@ public final class SceneFx {
 
     // ---- solids --------------------------------------------------------------------------------------
 
-    /** Soft clouds (sawdust, flour, stone dust), lit like the place they are in. */
     public static void dust(Vec3 at, int color, int count, double size, double rise) {
         for (int i = 0; i < count; i++) {
             Vec3 v = new Vec3((RANDOM.nextDouble() - 0.5) * 0.6, rise * (0.5 + RANDOM.nextDouble()), (RANDOM.nextDouble() - 0.5) * 0.6);
@@ -246,7 +236,6 @@ public final class SceneFx {
         }
     }
 
-    /** Bits of the work itself thrown off (cut, ground, crushed), tumbling down to {@code floor}. */
     public static void chips(Vec3 at, ItemStack stack, int count, Vec3 direction, double speed, double floor) {
         Vec3 dir = direction.normalize();
         for (int i = 0; i < count; i++) {
@@ -256,7 +245,6 @@ public final class SceneFx {
         }
     }
 
-    /** A hard hit on a surface facing {@code normal}: a ring racing out, and on a floor, dust kicked up round it. */
     public static void shock(Vec3 at, Vec3 normal, double radius, int color, double strength) {
         Particles.ripple(at, normal, radius * 0.15, radius, 0.35, color, (float) (0.85 * strength));
         Particles.ripple(at, normal, radius * 0.1, radius * 0.6, 0.25, 0xFFFFFF, (float) (0.45 * strength));
@@ -272,7 +260,7 @@ public final class SceneFx {
 
     // ---- fire and metal ------------------------------------------------------------------------------
 
-    /** Embers rising off a fire (blue over a cake), and the heat waving above it. Once a frame. */
+    /** Blue over a cake. Once a frame. */
     public static void embers(Vec3 at, double radius, boolean cake, double perSecond) {
         int color = cake ? CAKE : EMBER;
         float r = (color >> 16 & 0xFF) / 255f, g = (color >> 8 & 0xFF) / 255f, b = (color & 0xFF) / 255f;
@@ -287,7 +275,6 @@ public final class SceneFx {
         }
     }
 
-    /** Brass-hot sparks thrown along {@code direction} (a crafter finishing, a wheel hitting its stop). */
     public static void brassSparks(Vec3 at, Vec3 direction, int count, double speed) {
         Vec3 dir = direction.normalize();
         for (int i = 0; i < count; i++) {
@@ -306,7 +293,6 @@ public final class SceneFx {
         return new Vec3((RANDOM.nextDouble() - 0.5) * 2 * amount, (RANDOM.nextDouble() - 0.5) * 2 * amount, (RANDOM.nextDouble() - 0.5) * 2 * amount);
     }
 
-    /** A random point on the level disc of this radius round {@code center}. */
     private static Vec3 around(Vec3 center, double radius) {
         double a = angle(), r = radius * Math.sqrt(RANDOM.nextDouble());
         return center.add(Math.cos(a) * r, 0, Math.sin(a) * r);

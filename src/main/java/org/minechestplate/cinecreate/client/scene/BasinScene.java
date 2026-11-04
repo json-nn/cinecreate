@@ -148,7 +148,6 @@ public class BasinScene extends CineStation<BasinMenu> {
         return top;
     }
 
-    /** Where the hand drops and pours in. */
     private Vec3 dropAt() {
         return top;
     }
@@ -244,7 +243,7 @@ public class BasinScene extends CineStation<BasinMenu> {
     }
 
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         double k = Anim.inOutCubic(watch);
         Vec3 eye = inside.add(side().scale(CAMERA_OUT + BACK * k)).add(0, CAMERA_UP + RISE * k, 0);
         if (k > 0) {
@@ -278,7 +277,7 @@ public class BasinScene extends CineStation<BasinMenu> {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 64;
     }
 
@@ -720,8 +719,7 @@ public class BasinScene extends CineStation<BasinMenu> {
     }
 
     /**
-     * Once a frame: with the whisk down in it the liquid churns round it (over a fire it boils), a dry mix tumbles; a
-     * heated liquid at rest simmers.
+     * Once a frame: churns with the whisk down (boils over a fire), tumbles a dry mix, simmers a heated liquid at rest.
      */
     private void agitate() {
         Vec3 liquid = liquidTop();
@@ -766,7 +764,7 @@ public class BasinScene extends CineStation<BasinMenu> {
         return WARM;
     }
 
-    /** The fluid's colour without its alpha: CI's flash adds its own, and an opaque one would fill the screen. */
+    /** Without its alpha: CI's flash adds its own, and an opaque tint fills the screen. */
     private static int tint(FluidStack fluid) {
         return IClientFluidTypeExtensions.of(fluid.getFluid()).getTintColor(fluid) & 0xFFFFFF;
     }
@@ -784,12 +782,12 @@ public class BasinScene extends CineStation<BasinMenu> {
     }
 
     @Override
-    public double cameraKick() {
+    protected double sceneKick() {
         return KICK * Math.exp(-(Scene.clock() - kickAt) * KICK_DECAY);
     }
 
     @Override
-    public double flash() {
+    protected double sceneFlash() {
         return FLASH * Math.exp(-(Scene.clock() - flashAt) * FLASH_DECAY);
     }
 

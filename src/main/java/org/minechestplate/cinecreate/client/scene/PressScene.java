@@ -82,7 +82,7 @@ public class PressScene extends DepotScene {
 
     /** Pulled back and a little lower than at the bare depot, so the head is in the frame too. */
     @Override
-    public CameraRig.Pose lean() {
+    protected CameraRig.Pose sceneLean() {
         Vec3 eye = top.add(side().scale(1.05)).add(0, 0.55, 0);
         Vec3 look = top.add(0, 0.45, 0).subtract(eye);
         float yaw = (float) Math.toDegrees(Math.atan2(-look.x, look.z));
@@ -91,7 +91,7 @@ public class PressScene extends DepotScene {
     }
 
     @Override
-    public double leanFov() {
+    protected double sceneFov() {
         return 66;
     }
 
@@ -233,12 +233,12 @@ public class PressScene extends DepotScene {
     }
 
     @Override
-    public double cameraKick() {
+    protected double sceneKick() {
         return KICK * strength * Math.exp(-(Scene.clock() - kickAt) * KICK_DECAY);
     }
 
     @Override
-    public double flash() {
+    protected double sceneFlash() {
         return FLASH * strength * Math.exp(-(Scene.clock() - kickAt) * FLASH_DECAY);
     }
 
