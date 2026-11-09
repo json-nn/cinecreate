@@ -260,5 +260,8 @@
   "cinecreate.settings.trigger.key.means": "Клавиша: правый клик работает как обычно, сцену начинает H.",
   "cinecreate.settings.trigger.off.means": "Выкл: сцены нет, блок работает как обычно.",
   "cinecreate.settings.section.ejector": "Весовая катапульта",
-  "cinecreate.settings.section.client": "Режим клиента"
+  "cinecreate.settings.section.client": "Режим клиента",
+  "cinecreate.settings.section.grip": "Длиннохват",
+  "cinecreate.configuration.gripScenes": "Сцены с длиннохватом",
+  "cinecreate.configuration.gripScenes.tooltip": "С длиннохватом в руке сцены можно начинать и вести издалека. Выкл: длиннохват не учитывается, нужно подойти ближе."
 }

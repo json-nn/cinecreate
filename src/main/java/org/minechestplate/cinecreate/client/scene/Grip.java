@@ -12,6 +12,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.minechestplate.cinecreate.CineCreate;
 import org.minechestplate.cinecreate.bridge.Bridge;
+import org.minechestplate.cinecreate.client.ClientConfig;
 
 /**
  * Create's Extendo Grip in the scenes (DESIGN §8.5): its reach is exactly Create's (the player's block interaction range,
@@ -34,20 +35,20 @@ public final class Grip {
         return (AllItems.EXTENDO_GRIP.isIn(player.getMainHandItem()) ? 1 : 0) + (AllItems.EXTENDO_GRIP.isIn(player.getOffhandItem()) ? 1 : 0);
     }
 
+    /** A grip in either hand, and the player's setting lets grips work scenes (off: every scene is bare-handed). */
     public static boolean inHand() {
-        return held(Minecraft.getInstance().player) > 0;
+        return ClientConfig.gripScenes() && held(Minecraft.getInstance().player) > 0;
     }
 
     /** Create's own rule for a grip's click from these feet, and within the server's limit. */
     public static boolean reaches(Vec3 feet, BlockPos pos) {
-        Player player = Minecraft.getInstance().player;
-        return held(player) > 0 && within(feet, pos, player.blockInteractionRange());
+        return inHand() && within(feet, pos, Minecraft.getInstance().player.blockInteractionRange());
     }
 
     /** For the refusal card's hint: whether one grip's modifier would let the player reach the block. */
     public static boolean wouldReach(Vec3 feet, BlockPos pos) {
         Player player = Minecraft.getInstance().player;
-        return player != null && held(player) == 0
+        return player != null && ClientConfig.gripScenes() && held(player) == 0
                 && within(feet, pos, player.blockInteractionRange() + ExtendoGripItem.singleRangeAttributeModifier.amount());
     }
 
@@ -63,7 +64,7 @@ public final class Grip {
      */
     public static boolean reachesNow(BlockPos pos) {
         Player player = Minecraft.getInstance().player;
-        if (held(player) == 0) {
+        if (!inHand()) {
             return false;
         }
         double range = player.blockInteractionRange();

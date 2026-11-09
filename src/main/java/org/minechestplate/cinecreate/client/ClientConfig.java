@@ -28,7 +28,7 @@ public final class ClientConfig {
     public static final ModConfigSpec.BooleanValue INVITATION;
     public static final ModConfigSpec.BooleanValue FOLLOW_LAUNCHES;
     public static final ModConfigSpec.IntValue WATCH_REACH;
-    public static final ModConfigSpec.BooleanValue WALL_MAP, EDGE_TURN;
+    public static final ModConfigSpec.BooleanValue WALL_MAP, EDGE_TURN, GRIP_SCENES;
     public static final ModConfigSpec.BooleanValue JOLTS, FLASHES;
     public static final ModConfigSpec.BooleanValue CLIENT_MODE;
     public static final ModConfigSpec.BooleanValue PARTICLES, FOLLOW_GAME;
@@ -56,6 +56,9 @@ public final class ClientConfig {
         WATCH_REACH = b.comment("Farthest launch target the view follows, in blocks.")
                 .translation("cinecreate.configuration.watchReach")
                 .defineInRange("watchReach", 32, 8, 64);
+        GRIP_SCENES = b.comment("Let an Extendo Grip in hand start and work scenes from farther away.")
+                .translation("cinecreate.configuration.gripScenes")
+                .define("gripScenes", true);
         WALL_MAP = b.comment("With an Extendo Grip on a big crafter wall, show a map of the part in view.")
                 .translation("cinecreate.configuration.wallMap")
                 .define("wallMap", true);
@@ -112,6 +115,10 @@ public final class ClientConfig {
 
     public static int watchReach() {
         return SPEC.isLoaded() ? WATCH_REACH.get() : WATCH_REACH.getDefault();
+    }
+
+    public static boolean gripScenes() {
+        return !SPEC.isLoaded() || GRIP_SCENES.get();
     }
 
     public static boolean wallMap() {

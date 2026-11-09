@@ -48,7 +48,7 @@
 
 - Minecraft 1.21.1 with NeoForge
 - [Create](https://github.com/Creators-of-Create/Create) 6.0.10 or newer
-- [Cinematic Interactions](https://www.curseforge.com/minecraft/mc-mods/cinematic-interactions) 0.18.28 or newer
+- [Cinematic Interactions](https://www.curseforge.com/minecraft/mc-mods/cinematic-interactions) 0.18.30 or newer
 
 Install it on both the server and the client.
 

@@ -102,6 +102,8 @@ public final class SettingsScreen extends Screen {
         }
         scenes.add(new Heading("cinecreate.settings.section.key"));
         scenes.add(new Toggle(draft("cinecreate.configuration.invitation", ClientConfig.INVITATION, SettingsScreen::onOff), () -> false));
+        scenes.add(new Heading("cinecreate.settings.section.grip"));
+        scenes.add(new Toggle(draft("cinecreate.configuration.gripScenes", ClientConfig.GRIP_SCENES, SettingsScreen::onOff), () -> false));
         pages.add(new Page("cinecreate.settings.page.scenes", AllItems.BRASS_HAND.asStack(), scenes));
 
         Draft<Boolean> all = draft("cinecreate.configuration.particles.enabled", ClientConfig.PARTICLES, SettingsScreen::onOff);

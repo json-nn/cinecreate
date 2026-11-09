@@ -4,7 +4,6 @@ import dev.dyslexic.cinematic.client.ClientStation;
 import dev.dyslexic.cinematic.client.Reach;
 import dev.dyslexic.cinematic.client.ReachNotice;
 import dev.dyslexic.cinematic.client.Scene;
-import dev.dyslexic.cinematic.station.StationKind;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Locale;
@@ -15,6 +14,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import org.minechestplate.cinecreate.CineCreate;
+import org.minechestplate.cinecreate.client.scene.CineStation;
 import org.minechestplate.cinecreate.client.scene.Grip;
 
 /** Our notices, shown in Cinematic Interactions' own notice line ({@code ReachNotice}). */
@@ -57,8 +57,9 @@ public final class CiNotice {
         whyNotedAt = Util.getMillis();
     }
 
+    /** Only for our scenes: every add-on's station is of kind ADDON, and another add-on's must keep CI's own notice. */
     public static void refused(ClientStation at, @Nullable Reach.Reason reason, @Nullable Component blocker) {
-        if (at.kind() == StationKind.ADDON) {
+        if (at instanceof CineStation<?>) {
             refused(at.pos, reason, blocker);
         }
     }

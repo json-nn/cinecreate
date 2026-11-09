@@ -260,5 +260,8 @@
   "cinecreate.settings.trigger.key.means": "Key: right-click works as normal; press H to start the scene.",
   "cinecreate.settings.trigger.off.means": "Off: no scene, the block works as normal.",
   "cinecreate.settings.section.ejector": "Weighted Ejector",
-  "cinecreate.settings.section.client": "Client mode"
+  "cinecreate.settings.section.client": "Client mode",
+  "cinecreate.settings.section.grip": "Extendo Grip",
+  "cinecreate.configuration.gripScenes": "Grip scenes",
+  "cinecreate.configuration.gripScenes.tooltip": "With an Extendo Grip in hand, scenes can start and be worked from farther away. Off: the grip is ignored and you have to stand close."
 }

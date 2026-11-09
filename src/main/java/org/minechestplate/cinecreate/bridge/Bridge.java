@@ -227,7 +227,6 @@ public final class Bridge {
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.CONSUME);
         if (level.isClientSide()) {
-            // то же, что делает CI для своих станций: сцену начинает клиент (Scene.begin за этим мостом)
             ClientBridge.useStation.accept(target.immutable(), StationKind.ADDON);
         }
     }
